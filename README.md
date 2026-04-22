@@ -19,7 +19,7 @@ architecture_prompts <ARCHITECT> [OPTIONS]
 ## Prerequisites
 
 - `opencode` must be installed and available on your `PATH`. It is managed outside Nix.
-- Linux (`x86_64` or `aarch64`).
+- Linux (`x86_64` or `aarch64`) or macOS (`x86_64` or `aarch64`).
 
 ---
 

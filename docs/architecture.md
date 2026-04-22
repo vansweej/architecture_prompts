@@ -160,7 +160,7 @@ Err(AppError::LaunchFailed(err))
 - There is no zombie Rust process consuming resources.
 - Signal handling is opencode's responsibility, not ours.
 
-The trade-off is that `exec()` is Unix-only. This is acceptable because the `flake.nix` targets `x86_64-linux` and `aarch64-linux` only.
+The trade-off is that `exec()` is Unix-only. This is acceptable because all four target platforms (`x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, `aarch64-darwin`) are Unix.
 
 ### Agent file written to project-local `.opencode/agents/`
 
