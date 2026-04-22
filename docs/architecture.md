@@ -315,15 +315,24 @@ No `unwrap()` or `expect()` calls exist in production code paths. The only `expe
 
 ## Nix packaging
 
-The flake provides four outputs:
+The flake targets four platforms and provides four outputs on each:
+
+| Platform | Description |
+|---|---|
+| `x86_64-linux` | 64-bit Linux (Intel/AMD) |
+| `aarch64-linux` | 64-bit Linux (ARM) |
+| `x86_64-darwin` | macOS (Intel) |
+| `aarch64-darwin` | macOS (Apple Silicon) |
 
 ```mermaid
 graph LR
-    flake["flake.nix"] --> pkg["packages.default\nrustPlatform.buildRustPackage\nBinary + embedded prompts"]
+    flake["flake.nix"] --> pkg["packages.default\nrustPlatform.buildRustPackage\nBinary + embedded prompts\n(all 4 platforms)"]
     flake --> overlay["overlays.default\npkgs.architecture-prompts\nCompose into any pkgs set"]
-    flake --> app["apps.default\nnix run support"]
-    flake --> dev["devShells.default\nrustc · cargo · clippy\nrustfmt · cargo-tarpaulin"]
+    flake --> app["apps.default\nnix run support\n(all 4 platforms)"]
+    flake --> dev["devShells.default\nrustc · cargo · clippy\nrustfmt · cargo-tarpaulin\n(all 4 platforms)"]
 ```
+
+`nix build .` always builds for the **current host platform** — it resolves `packages.${builtins.currentSystem}.default`. No cross-compilation occurs.
 
 ### Source filtering
 
@@ -343,6 +352,18 @@ src = fs.toSource {
 
 The `prompts/` directory is explicitly included because `include_str!()` reads those files at compile time. Without it, the Nix sandbox would not find them.
 
+### Dev shell
+
+All five packages in the dev shell work on all four target platforms:
+
+| Package | Purpose |
+|---|---|
+| `rustc` | Rust compiler |
+| `cargo` | Build tool and package manager |
+| `clippy` | Linter |
+| `rustfmt` | Formatter |
+| `cargo-tarpaulin` | Coverage tool (supported on Linux and macOS) |
+
 ### Consuming from another flake
 
 ```nix
@@ -355,17 +376,23 @@ The `prompts/` directory is explicitly included because `include_str!()` reads t
 
   outputs = { nixpkgs, architecture-prompts, ... }:
     let
-      system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
+      # Works on x86_64-linux, aarch64-linux, x86_64-darwin, aarch64-darwin
+      forEachSystem = nixpkgs.lib.genAttrs [
+        "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"
+      ];
     in {
       # Option A: direct package reference
-      devShells.default = pkgs.mkShell {
-        packages = [
-          architecture-prompts.packages.${system}.default
-        ];
-      };
+      devShells = forEachSystem (system:
+        let pkgs = nixpkgs.legacyPackages.${system}; in {
+          default = pkgs.mkShell {
+            packages = [
+              architecture-prompts.packages.${system}.default
+            ];
+          };
+        }
+      );
 
-      # Option B: via overlay (adds pkgs.architecture-prompts)
+      # Option B: via overlay (adds pkgs.architecture-prompts to all systems)
       # nixpkgs.overlays = [ architecture-prompts.overlays.default ];
     };
 }
