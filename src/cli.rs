@@ -42,6 +42,14 @@ pub struct Cli {
     /// If omitted, each persona uses its built-in default model.
     #[arg(long, short = 'm')]
     pub model: Option<String>,
+
+    /// Run in review mode: read-only for all repo files, but the persona may
+    /// write its findings to `reviews/arch-<persona>-<date>.md`.
+    ///
+    /// The `reviews/` directory is created automatically before launching
+    /// opencode. Mutually exclusive with --full.
+    #[arg(long, default_value_t = false, conflicts_with = "full")]
+    pub review: bool,
 }
 
 #[cfg(test)]
@@ -124,5 +132,23 @@ mod tests {
     fn model_defaults_to_none() {
         let cli = parse(&["principal"]).unwrap();
         assert!(cli.model.is_none());
+    }
+
+    #[test]
+    fn parses_review_flag() {
+        let cli = parse(&["principal", "--review"]).unwrap();
+        assert!(cli.review);
+        assert!(!cli.full);
+    }
+
+    #[test]
+    fn review_defaults_to_false() {
+        let cli = parse(&["principal"]).unwrap();
+        assert!(!cli.review);
+    }
+
+    #[test]
+    fn review_and_full_are_mutually_exclusive() {
+        assert!(parse(&["principal", "--review", "--full"]).is_err());
     }
 }

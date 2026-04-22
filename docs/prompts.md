@@ -38,7 +38,8 @@ quadrantChart
 
 **Invoke:**
 ```bash
-architecture_prompts principal
+architecture_prompts principal          # read-only review
+architecture_prompts principal --review # read-only + saves findings to reviews/
 ```
 
 **Default model:** `github-copilot/claude-opus-4.6` — override with `--model`
@@ -94,7 +95,8 @@ The prompt instructs the model to respond in structured sections. Expect heading
 
 **Invoke:**
 ```bash
-architecture_prompts design
+architecture_prompts design          # read-only review
+architecture_prompts design --review # read-only + saves findings to reviews/
 ```
 
 **Default model:** `github-copilot/claude-opus-4.6` — override with `--model`
@@ -160,7 +162,8 @@ The "avoid speculative features" rule keeps the review grounded in what is actua
 
 **Invoke:**
 ```bash
-architecture_prompts complexity
+architecture_prompts complexity          # read-only review
+architecture_prompts complexity --review # read-only + saves findings to reviews/
 ```
 
 **Default model:** `github-copilot/claude-sonnet-4.6` — override with `--model`
@@ -214,7 +217,8 @@ The "complexity compounds over time" rule is the core axiom: a small amount of u
 
 **Invoke:**
 ```bash
-architecture_prompts security
+architecture_prompts security          # read-only review
+architecture_prompts security --review # read-only + saves findings to reviews/
 ```
 
 **Default model:** `github-copilot/claude-sonnet-4.6` — override with `--model`
@@ -346,26 +350,27 @@ architecture_prompts design
 
 ```bash
 # From your project root
+
+# Without saved findings (interactive only)
 architecture_prompts principal
-# ... review output, note findings ...
-
 architecture_prompts complexity
-# ... review output, note findings ...
-
 architecture_prompts security
-# ... review output, note findings ...
-
 architecture_prompts design
-# ... final verdict ...
+
+# With saved findings in reviews/
+architecture_prompts principal --review
+architecture_prompts complexity --review
+architecture_prompts security --review
+architecture_prompts design --review
 ```
 
-Each invocation overwrites the previous agent file for that persona, so you can re-run any step without cleanup.
+Each invocation overwrites the previous agent file for that persona, so you can re-run any step without cleanup. In `--review` mode, each run produces a timestamped file (`reviews/arch-<persona>-YYYY-MM-DD.md`) so findings accumulate rather than overwrite.
 
 ---
 
 ## Permissions reference
 
-By default all personas run in read-only mode. Pass `--full` to any persona to unlock full access.
+By default all personas run in read-only mode. Pass `--review` to save findings to `reviews/`, or `--full` to unlock all access. `--review` and `--full` are mutually exclusive.
 
 ```mermaid
 flowchart TD
@@ -376,6 +381,13 @@ flowchart TD
         R4[webfetch: ask]
     end
 
+    subgraph review["Review mode (--review)"]
+        V1["edit: deny (except reviews/arch-*.md)"]
+        V2["write: deny (except reviews/arch-*.md)"]
+        V3["bash: git log*, git diff*, git status only"]
+        V4[webfetch: ask]
+    end
+
     subgraph full["Full mode (--full)"]
         F1[edit: allow]
         F2[write: allow]
@@ -384,4 +396,8 @@ flowchart TD
     end
 ```
 
-Read-only is the right default for review sessions — the architect personas are evaluators, not implementers. Use `--full` only when you want the persona to also make changes (for example, updating documentation or writing an ADR based on its findings).
+**Read-only** is the right default for review sessions — the architect personas are evaluators, not implementers.
+
+**Review mode** (`--review`) is the sweet spot for most use cases: the persona can read everything in the repo but can only write its findings to `reviews/arch-<persona>-<date>.md`. The `reviews/` directory is created automatically. A review-output instruction is appended to the persona's system prompt directing it to save its findings there. Commit the review files to keep a history, or add `reviews/arch-*.md` to `.gitignore` if you prefer ephemeral output.
+
+**Full mode** (`--full`) unlocks all permissions — use it only when you want the persona to also make changes (for example, writing an ADR or updating documentation based on its findings).

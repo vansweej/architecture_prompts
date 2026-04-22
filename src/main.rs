@@ -6,10 +6,12 @@ mod prompts;
 
 use clap::Parser;
 
-use crate::agent::generate_agent_content;
+use crate::agent::{PermissionMode, generate_agent_content};
 use crate::cli::Cli;
 use crate::error::AppError;
-use crate::launcher::{check_opencode_in_path, launch_opencode, write_agent_file};
+use crate::launcher::{
+    check_opencode_in_path, ensure_reviews_dir, launch_opencode, write_agent_file,
+};
 use crate::prompts::ArchitectType;
 
 // main() and print_list() are excluded from coverage: they are entry-point /
@@ -35,7 +37,15 @@ fn main() -> Result<(), AppError> {
         .as_deref()
         .unwrap_or_else(|| architect.default_model());
 
-    let content = generate_agent_content(architect, cli.full, model);
+    let mode = if cli.full {
+        PermissionMode::Full
+    } else if cli.review {
+        PermissionMode::Review
+    } else {
+        PermissionMode::ReadOnly
+    };
+
+    let content = generate_agent_content(architect, mode, model);
 
     if cli.dry_run {
         print!("{content}");
@@ -48,6 +58,12 @@ fn main() -> Result<(), AppError> {
     let path = write_agent_file(&cwd, architect, &content)?;
     eprintln!("Wrote agent file: {}", path.display());
     eprintln!("Tip: add .opencode/agents/arch-*.md to your .gitignore");
+
+    if mode == PermissionMode::Review {
+        ensure_reviews_dir(&cwd)?;
+        eprintln!("Created reviews/ directory for findings output");
+        eprintln!("Tip: commit reviews/arch-*.md to keep a history, or add to .gitignore");
+    }
 
     launch_opencode(architect.agent_name())
 }

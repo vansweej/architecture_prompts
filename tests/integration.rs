@@ -155,3 +155,67 @@ fn dry_run_with_model_override() {
         "--model override must appear verbatim in frontmatter, got:\n{stdout}"
     );
 }
+
+// ── review mode ───────────────────────────────────────────────────────────────
+
+#[test]
+fn dry_run_review_mode_contains_scoped_edit_permission() {
+    let output = binary()
+        .args(["principal", "--dry-run", "--review"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "exit code: {}", output.status);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"reviews/arch-*.md\": allow"),
+        "review mode must allow writes to reviews/arch-*.md, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("\"*\": deny"),
+        "review mode must deny wildcard edits, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn dry_run_review_mode_contains_review_output_instruction() {
+    let output = binary()
+        .args(["principal", "--dry-run", "--review"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("## Review Output"),
+        "review mode must append the review-output instruction, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("arch-principal"),
+        "review-output instruction must reference the persona file name, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn dry_run_review_mode_does_not_allow_full_edit() {
+    let output = binary()
+        .args(["security", "--dry-run", "--review"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("edit: allow"),
+        "review mode must not grant full edit permission, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn review_and_full_flags_conflict() {
+    let status = binary()
+        .args(["principal", "--review", "--full"])
+        .status()
+        .unwrap();
+    assert!(
+        !status.success(),
+        "--review and --full must be mutually exclusive"
+    );
+}

@@ -11,6 +11,9 @@ pub enum AppError {
     #[error("failed to write agent file: {0}")]
     AgentFileWrite(#[source] std::io::Error),
 
+    #[error("failed to create reviews/ directory: {0}")]
+    ReviewsDirCreation(#[source] std::io::Error),
+
     #[error("failed to determine current working directory: {0}")]
     CurrentDir(#[source] std::io::Error),
 

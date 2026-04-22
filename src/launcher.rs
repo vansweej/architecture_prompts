@@ -27,6 +27,14 @@ pub fn write_agent_file(
     Ok(path)
 }
 
+/// Creates `<base>/reviews/` if it does not already exist, and
+/// returns the path to the directory.
+pub fn ensure_reviews_dir(base: &Path) -> Result<PathBuf, AppError> {
+    let dir = base.join("reviews");
+    std::fs::create_dir_all(&dir).map_err(AppError::ReviewsDirCreation)?;
+    Ok(dir)
+}
+
 /// Verifies that `opencode` is available in `PATH`.
 #[cfg(not(tarpaulin_include))]
 pub fn check_opencode_in_path() -> Result<(), AppError> {
@@ -111,5 +119,22 @@ mod tests {
         let path = write_agent_file(tmp.path(), ArchitectType::Design, "second").unwrap();
         let written = fs::read_to_string(path).unwrap();
         assert_eq!(written, "second");
+    }
+
+    #[test]
+    fn ensure_reviews_dir_creates_directory() {
+        let tmp = TempDir::new().unwrap();
+        let dir = ensure_reviews_dir(tmp.path()).unwrap();
+        assert!(dir.exists());
+        assert!(dir.is_dir());
+        assert_eq!(dir, tmp.path().join("reviews"));
+    }
+
+    #[test]
+    fn ensure_reviews_dir_is_idempotent() {
+        let tmp = TempDir::new().unwrap();
+        ensure_reviews_dir(tmp.path()).unwrap();
+        // Second call must not fail even when the directory already exists.
+        ensure_reviews_dir(tmp.path()).unwrap();
     }
 }

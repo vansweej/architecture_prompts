@@ -39,12 +39,18 @@ sequenceDiagram
 
     CLI->>CLI: Parse args (clap)
     CLI->>CLI: Resolve model (--model flag or persona default)
+    CLI->>CLI: Resolve permission mode (readonly / review / full)
     CLI->>CLI: Embed prompt (compile-time include_str!)
     CLI->>CLI: Generate agent .md (frontmatter + prompt body)
     CLI->>FS: Write arch-principal.md
     FS-->>CLI: path confirmed
 
     CLI->>CLI: Verify opencode in PATH
+
+    opt --review mode
+        CLI->>FS: Create reviews/ directory
+    end
+
     CLI->>OC: exec opencode --agent arch-principal
     note over CLI: Process replaced — CLI no longer exists
 
@@ -68,8 +74,8 @@ graph TD
     main --> error
 
     cli["cli.rs\nClap argument\ndefinitions"]
-    agent["agent.rs\nAgent .md file\ngeneration"]
-    launcher["launcher.rs\nDirectory + file\nwriting · exec"]
+    agent["agent.rs\nAgent .md file\ngeneration\nPermissionMode enum"]
+    launcher["launcher.rs\nDirectory + file\nwriting · exec\nreviews/ creation"]
     prompts["prompts.rs\nEmbedded prompts\nArchitectType enum\nModel defaults"]
     error["error.rs\nAppError enum\nthiserror"]
 
@@ -96,8 +102,8 @@ graph TD
 | `main.rs` | Orchestration: parse → generate → write → exec | — |
 | `cli.rs` | CLI argument definitions via `clap` derive | `Cli` |
 | `prompts.rs` | Compile-time prompt embedding; persona catalogue; model defaults | `ArchitectType` |
-| `agent.rs` | Generate the opencode agent `.md` file content | `generate_agent_content()` |
-| `launcher.rs` | Create directory, write file, exec opencode | `ensure_agent_dir()`, `write_agent_file()`, `launch_opencode()` |
+| `agent.rs` | Generate the opencode agent `.md` file content; permission modes | `generate_agent_content()`, `PermissionMode` |
+| `launcher.rs` | Create directories, write file, exec opencode | `ensure_agent_dir()`, `ensure_reviews_dir()`, `write_agent_file()`, `launch_opencode()` |
 | `error.rs` | Typed error enum | `AppError` |
 
 ---
@@ -242,6 +248,45 @@ flowchart LR
     B & C --> D["Written to agent .md\nmodel: &lt;resolved&gt;"]
 ```
 
+### Review mode: scoped write permissions
+
+The `--review` flag introduces a third permission mode that uses opencode's path-based `edit` permission globs to scope writes to `reviews/arch-*.md` while keeping everything else read-only.
+
+**Permission model:**
+
+```yaml
+permission:
+  edit:
+    "*": deny
+    "reviews/arch-*.md": allow
+  write:
+    "*": deny
+    "reviews/arch-*.md": allow
+  bash:
+    "*": deny
+    "git log*": allow
+    "git diff*": allow
+    "git status": allow
+  webfetch: ask
+```
+
+**Key design choices:**
+
+- opencode's `edit` permission supports path-based glob patterns. The tool cannot distinguish "edit an existing file" vs "create a new file" — the permission model is path-based only. Scoping to `reviews/arch-*.md` achieves the intent: the persona can create its findings file but cannot touch any existing source, config, or documentation.
+- Both `edit` and `write` keys are set with the same patterns defensively. Research shows `edit` covers both tools in current opencode, but setting both ensures correctness across versions.
+- The `reviews/` directory is created by the tool before launching opencode, so the persona does not need bash permission for `mkdir -p`.
+- A review-output instruction is appended to the prompt body at runtime, directing the persona to save its findings to `reviews/arch-<persona>-YYYY-MM-DD.md`. The LLM fills in today's date (available via opencode's session context).
+- Timestamped filenames are chosen by the LLM. The glob `arch-*.md` is deliberately broad — any date format matches. This avoids hardcoding a date format in the tool.
+- `--review` and `--full` are mutually exclusive (enforced by clap's `conflicts_with`).
+
+```mermaid
+flowchart LR
+    A["Permission\nmode?"]
+    A -->|"--full"| B["Full\nedit: allow\nwrite: allow\nbash: all"]
+    A -->|"--review"| C["Review\nedit: deny except reviews/\nwrite: deny except reviews/\nbash: git read-only"]
+    A -->|"default"| D["Read-only\nedit: deny\nwrite: deny\nbash: git read-only"]
+```
+
 ---
 
 ## Error handling
@@ -256,11 +301,12 @@ flowchart TD
         E1[OpenCodeNotFound\nopencode not in PATH]
         E2[AgentDirCreation\ncannot create .opencode/agents/]
         E3[AgentFileWrite\ncannot write agent .md]
-        E4[CurrentDir\ncannot determine cwd]
-        E5[LaunchFailed\nexec returned an error]
+        E4[ReviewsDirCreation\ncannot create reviews/]
+        E5[CurrentDir\ncannot determine cwd]
+        E6[LaunchFailed\nexec returned an error]
     end
 
-    E --> E1 & E2 & E3 & E4 & E5
+    E --> E1 & E2 & E3 & E4 & E5 & E6
 ```
 
 No `unwrap()` or `expect()` calls exist in production code paths. The only `expect()` in `main.rs` guards a condition that clap enforces statically (architect is `Some` when `--list` is not set).
@@ -337,13 +383,13 @@ opencode is managed outside Nix and must be present in `PATH` at runtime. The bi
 flowchart TD
     subgraph unit["Unit tests (src/**/*.rs)"]
         U1["prompts.rs\n10 tests\nEmbedding, names, descriptions, model defaults"]
-        U2["cli.rs\n12 tests\nArg parsing, validation, --model flag"]
-        U3["agent.rs\n12 tests\nFrontmatter generation, model field"]
-        U4["launcher.rs\n5 tests\nDir creation, file writing"]
+        U2["cli.rs\n15 tests\nArg parsing, validation, --model, --review flags"]
+        U3["agent.rs\n18 tests\nFrontmatter generation, model field, review mode"]
+        U4["launcher.rs\n7 tests\nDir creation, file writing, reviews/ dir"]
     end
 
     subgraph integration["Integration tests (tests/integration.rs)"]
-        I1["12 tests\n--list, --dry-run, model defaults, error cases\nRun against compiled binary"]
+        I1["16 tests\n--list, --dry-run, model defaults, review mode, error cases\nRun against compiled binary"]
     end
 
     subgraph excluded["Excluded from coverage"]
