@@ -35,6 +35,13 @@ pub struct Cli {
     /// files or launching opencode.
     #[arg(long, default_value_t = false)]
     pub dry_run: bool,
+
+    /// Override the default LLM model for this persona.
+    ///
+    /// Format: provider/model (e.g., github-copilot/claude-opus-4.6).
+    /// If omitted, each persona uses its built-in default model.
+    #[arg(long, short = 'm')]
+    pub model: Option<String>,
 }
 
 #[cfg(test)]
@@ -99,5 +106,23 @@ mod tests {
     #[test]
     fn rejects_missing_architect_without_list() {
         assert!(parse(&[]).is_err());
+    }
+
+    #[test]
+    fn parses_model_long_flag() {
+        let cli = parse(&["principal", "--model", "github-copilot/claude-opus-4.6"]).unwrap();
+        assert_eq!(cli.model.as_deref(), Some("github-copilot/claude-opus-4.6"));
+    }
+
+    #[test]
+    fn parses_model_short_flag() {
+        let cli = parse(&["principal", "-m", "openai/gpt-5"]).unwrap();
+        assert_eq!(cli.model.as_deref(), Some("openai/gpt-5"));
+    }
+
+    #[test]
+    fn model_defaults_to_none() {
+        let cli = parse(&["principal"]).unwrap();
+        assert!(cli.model.is_none());
     }
 }

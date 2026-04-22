@@ -38,6 +38,7 @@ sequenceDiagram
     User->>CLI: architecture_prompts principal
 
     CLI->>CLI: Parse args (clap)
+    CLI->>CLI: Resolve model (--model flag or persona default)
     CLI->>CLI: Embed prompt (compile-time include_str!)
     CLI->>CLI: Generate agent .md (frontmatter + prompt body)
     CLI->>FS: Write arch-principal.md
@@ -69,10 +70,10 @@ graph TD
     cli["cli.rs\nClap argument\ndefinitions"]
     agent["agent.rs\nAgent .md file\ngeneration"]
     launcher["launcher.rs\nDirectory + file\nwriting · exec"]
-    prompts["prompts.rs\nEmbedded prompts\nArchitectType enum"]
+    prompts["prompts.rs\nEmbedded prompts\nArchitectType enum\nModel defaults"]
     error["error.rs\nAppError enum\nthiserror"]
 
-    prompts -->|"ArchitectType\n(prompt, agent_name,\ndescription)"| agent
+    prompts -->|"ArchitectType\n(prompt, agent_name,\ndescription, default_model)"| agent
     prompts -->|"ArchitectType"| launcher
     prompts -->|"ArchitectType\nValueEnum"| cli
     agent -->|"String (agent content)"| main
@@ -94,7 +95,7 @@ graph TD
 |---|---|---|
 | `main.rs` | Orchestration: parse → generate → write → exec | — |
 | `cli.rs` | CLI argument definitions via `clap` derive | `Cli` |
-| `prompts.rs` | Compile-time prompt embedding; persona catalogue | `ArchitectType` |
+| `prompts.rs` | Compile-time prompt embedding; persona catalogue; model defaults | `ArchitectType` |
 | `agent.rs` | Generate the opencode agent `.md` file content | `generate_agent_content()` |
 | `launcher.rs` | Create directory, write file, exec opencode | `ensure_agent_dir()`, `write_agent_file()`, `launch_opencode()` |
 | `error.rs` | Typed error enum | `AppError` |
@@ -212,6 +213,35 @@ permission:
 
 This is the right default for architect personas — they are evaluators, not implementers. The `--full` flag unlocks all permissions for cases where the persona should also produce output (e.g., writing an ADR).
 
+### Per-persona model defaults
+
+Each persona ships with a built-in default LLM model. The model is written to the `model:` field in the agent frontmatter and interpreted by opencode at session start.
+
+| Persona | Default model | Rationale |
+|---|---|---|
+| `principal` | `github-copilot/claude-opus-4.6` | Broad system review needs maximum reasoning depth |
+| `design` | `github-copilot/claude-opus-4.6` | Formal verdict needs strong judgment |
+| `complexity` | `github-copilot/claude-sonnet-4.6` | Focused audit — Sonnet is fast and sufficient |
+| `security` | `github-copilot/claude-sonnet-4.6` | Focused audit — Sonnet is fast and sufficient |
+
+The resolution logic in `main.rs`:
+
+```rust
+let model = cli.model
+    .as_deref()
+    .unwrap_or_else(|| architect.default_model());
+```
+
+The `--model` / `-m` flag provides an escape hatch when defaults become stale or the user wants to experiment. No validation of the model string is performed by this tool — opencode validates the model at session start.
+
+```mermaid
+flowchart LR
+    A["--model flag\nprovided?"]
+    A -->|Yes| B["Use --model value"]
+    A -->|No| C["architect.default_model()"]
+    B & C --> D["Written to agent .md\nmodel: &lt;resolved&gt;"]
+```
+
 ---
 
 ## Error handling
@@ -306,14 +336,14 @@ opencode is managed outside Nix and must be present in `PATH` at runtime. The bi
 ```mermaid
 flowchart TD
     subgraph unit["Unit tests (src/**/*.rs)"]
-        U1["prompts.rs\n7 tests\nEmbedding, names, descriptions"]
-        U2["cli.rs\n9 tests\nArg parsing, validation"]
-        U3["agent.rs\n9 tests\nFrontmatter generation"]
+        U1["prompts.rs\n10 tests\nEmbedding, names, descriptions, model defaults"]
+        U2["cli.rs\n12 tests\nArg parsing, validation, --model flag"]
+        U3["agent.rs\n12 tests\nFrontmatter generation, model field"]
         U4["launcher.rs\n5 tests\nDir creation, file writing"]
     end
 
     subgraph integration["Integration tests (tests/integration.rs)"]
-        I1["9 tests\n--list, --dry-run, error cases\nRun against compiled binary"]
+        I1["12 tests\n--list, --dry-run, model defaults, error cases\nRun against compiled binary"]
     end
 
     subgraph excluded["Excluded from coverage"]

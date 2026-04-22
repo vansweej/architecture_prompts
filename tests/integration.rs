@@ -117,3 +117,41 @@ fn invalid_architect_name_exits_with_error() {
     let status = binary().arg("unknown-architect").status().unwrap();
     assert!(!status.success());
 }
+
+// ── model defaults ────────────────────────────────────────────────────────────
+
+#[test]
+fn dry_run_principal_contains_opus_model() {
+    let output = binary().args(["principal", "--dry-run"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("model: github-copilot/claude-opus-4.6"),
+        "principal must default to opus model, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn dry_run_complexity_contains_sonnet_model() {
+    let output = binary().args(["complexity", "--dry-run"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("model: github-copilot/claude-sonnet-4.6"),
+        "complexity must default to sonnet model, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn dry_run_with_model_override() {
+    let output = binary()
+        .args(["principal", "--dry-run", "--model", "openai/gpt-5"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("model: openai/gpt-5"),
+        "--model override must appear verbatim in frontmatter, got:\n{stdout}"
+    );
+}

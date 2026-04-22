@@ -23,12 +23,12 @@ quadrantChart
     complexity: [0.25, 0.30]
 ```
 
-| Persona | Scope | Output style | Best used |
-|---|---|---|---|
-| `principal` | Broadest | Structured sections | First-pass review |
-| `design` | Broad | Formal verdict | Final gate |
-| `complexity` | Narrow | Advisory findings | Mid-review audit |
-| `security` | Narrow | Risk identification | Mid-review audit |
+| Persona | Scope | Output style | Default model | Best used |
+|---|---|---|---|---|
+| `principal` | Broadest | Structured sections | `claude-opus-4.6` | First-pass review |
+| `design` | Broad | Formal verdict | `claude-opus-4.6` | Final gate |
+| `complexity` | Narrow | Advisory findings | `claude-sonnet-4.6` | Mid-review audit |
+| `security` | Narrow | Risk identification | `claude-sonnet-4.6` | Mid-review audit |
 
 ---
 
@@ -40,6 +40,8 @@ quadrantChart
 ```bash
 architecture_prompts principal
 ```
+
+**Default model:** `github-copilot/claude-opus-4.6` — override with `--model`
 
 **Full prompt:**
 
@@ -94,6 +96,8 @@ The prompt instructs the model to respond in structured sections. Expect heading
 ```bash
 architecture_prompts design
 ```
+
+**Default model:** `github-copilot/claude-opus-4.6` — override with `--model`
 
 **Full prompt:**
 
@@ -159,6 +163,8 @@ The "avoid speculative features" rule keeps the review grounded in what is actua
 architecture_prompts complexity
 ```
 
+**Default model:** `github-copilot/claude-sonnet-4.6` — override with `--model`
+
 **Full prompt:**
 
 > You are a principal engineer biased toward simplicity.
@@ -210,6 +216,8 @@ The "complexity compounds over time" rule is the core axiom: a small amount of u
 ```bash
 architecture_prompts security
 ```
+
+**Default model:** `github-copilot/claude-sonnet-4.6` — override with `--model`
 
 **Full prompt:**
 
@@ -268,16 +276,16 @@ The four personas are designed to be run in sequence. Each one builds on the pre
 flowchart LR
     A([Your architecture]) --> B
 
-    B["🏛️ principal\nBroad system review\nScalability · Reliability\nTrade-offs · Failure modes"]
+    B["🏛️ principal\nOpus 4.6\nBroad system review\nScalability · Reliability\nTrade-offs · Failure modes"]
     B --> C
 
-    C["🔬 complexity\nComplexity audit\nAccidental vs essential\nCognitive load · Ops surface"]
+    C["🔬 complexity\nSonnet 4.6\nComplexity audit\nAccidental vs essential\nCognitive load · Ops surface"]
     C --> D
 
-    D["🔒 security\nTrust boundary review\nAuthN/AuthZ · Blast radius\nC-I-A impact"]
+    D["🔒 security\nSonnet 4.6\nTrust boundary review\nAuthN/AuthZ · Blast radius\nC-I-A impact"]
     D --> E
 
-    E["⚖️ design\nFormal verdict\nAccept / Accept with concerns\n/ Reject"]
+    E["⚖️ design\nOpus 4.6\nFormal verdict\nAccept / Accept with concerns\n/ Reject"]
     E --> F([Decision])
 
     style B fill:#4a6fa5,color:#fff,stroke:#2d4a73

@@ -80,23 +80,28 @@ ARGUMENTS:
                  One of: principal, design, complexity, security
 
 OPTIONS:
-      --full     Launch opencode with full permissions
-                 (default: read-only — no file edits, restricted bash)
-      --list     List all available architect prompts with descriptions, then exit
-      --dry-run  Print the generated agent .md to stdout; do not write files or launch opencode
-  -h, --help     Print help
+  -m, --model <PROVIDER/MODEL>
+               Override the default LLM model for this persona
+               (e.g., github-copilot/claude-opus-4.6).
+               If omitted, each persona uses its built-in default.
+      --full   Launch opencode with full permissions
+               (default: read-only — no file edits, restricted bash)
+      --list   List all available architect prompts with descriptions, then exit
+      --dry-run
+               Print the generated agent .md to stdout; do not write files or launch opencode
+  -h, --help   Print help
 ```
 
 ---
 
 ## The four architect personas
 
-| Persona | When to use |
-|---|---|
-| `principal` | Broad system-level review — scalability, reliability, trade-offs, failure modes |
-| `design` | Formal gate review — renders an Accept / Accept with concerns / Reject verdict |
-| `complexity` | Complexity audit — identifies accidental complexity and unjustified component count |
-| `security` | Trust boundary review — AuthN/AuthZ, blast radius, failure impact on C-I-A |
+| Persona | Default model | When to use |
+|---|---|---|
+| `principal` | `claude-opus-4.6` | Broad system-level review — scalability, reliability, trade-offs, failure modes |
+| `design` | `claude-opus-4.6` | Formal gate review — renders an Accept / Accept with concerns / Reject verdict |
+| `complexity` | `claude-sonnet-4.6` | Complexity audit — identifies accidental complexity and unjustified component count |
+| `security` | `claude-sonnet-4.6` | Trust boundary review — AuthN/AuthZ, blast radius, failure impact on C-I-A |
 
 See [docs/prompts.md](docs/prompts.md) for the full prompt text and detailed guidance on each persona.
 
@@ -144,6 +149,14 @@ architecture_prompts complexity --dry-run
 
 Prints the `.md` file that would be written to `.opencode/agents/arch-complexity.md`, including the YAML frontmatter and the embedded system prompt. Nothing is written to disk.
 
+### Override the default model
+
+```bash
+architecture_prompts principal --model openai/gpt-5
+```
+
+Overrides the persona's built-in default model for this invocation. The model string is written verbatim to the `model:` field in the agent frontmatter and interpreted by opencode at session start.
+
 ### Suggested review pipeline
 
 Run the personas in sequence for a thorough architecture review:
@@ -190,6 +203,35 @@ This project's own `.gitignore` already includes this entry.
 |---|---|---|---|---|
 | **Read-only** (default) | deny | deny | `git log*`, `git diff*`, `git status` only | ask |
 | **Full** (`--full`) | allow | allow | all | allow |
+
+---
+
+## Model defaults
+
+Each persona ships with a built-in default LLM model chosen for its scope:
+
+| Persona | Default model | Rationale |
+|---|---|---|
+| `principal` | `github-copilot/claude-opus-4.6` | Broad system review needs maximum reasoning depth |
+| `design` | `github-copilot/claude-opus-4.6` | Formal verdict needs strong judgment |
+| `complexity` | `github-copilot/claude-sonnet-4.6` | Focused audit — Sonnet is fast and sufficient |
+| `security` | `github-copilot/claude-sonnet-4.6` | Focused audit — Sonnet is fast and sufficient |
+
+The `--model` / `-m` flag overrides the default for a single invocation:
+
+```bash
+architecture_prompts principal --model github-copilot/claude-sonnet-4.6
+```
+
+The model string is written verbatim to the `model:` field in the agent frontmatter. No validation is performed by this tool — opencode validates the model at session start.
+
+```mermaid
+flowchart LR
+    A["--model flag\nprovided?"]
+    A -->|Yes| B["Use --model value"]
+    A -->|No| C["Persona default\n(default_model())"]
+    B & C --> D["Written to agent .md\nmodel: &lt;resolved&gt;"]
+```
 
 ---
 

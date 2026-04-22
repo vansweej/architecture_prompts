@@ -30,7 +30,12 @@ fn main() -> Result<(), AppError> {
         .architect
         .expect("architect is required when --list is not set");
 
-    let content = generate_agent_content(architect, cli.full);
+    let model = cli
+        .model
+        .as_deref()
+        .unwrap_or_else(|| architect.default_model());
+
+    let content = generate_agent_content(architect, cli.full, model);
 
     if cli.dry_run {
         print!("{content}");
@@ -52,9 +57,10 @@ fn print_list() {
     println!("Available architect prompts:\n");
     for architect in ArchitectType::all() {
         println!(
-            "  {:12}  {}",
+            "  {:12}  {:45}  {}",
             architect.agent_name().trim_start_matches("arch-"),
-            architect.description()
+            architect.description(),
+            architect.default_model(),
         );
     }
 }

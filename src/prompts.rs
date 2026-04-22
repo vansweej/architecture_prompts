@@ -57,6 +57,22 @@ impl ArchitectType {
         }
     }
 
+    /// Returns the default LLM model for this persona.
+    ///
+    /// Broad/decisive personas (principal, design) use Opus for maximum
+    /// reasoning depth. Focused/fast personas (complexity, security) use
+    /// Sonnet, which is sufficient for their narrower scope.
+    ///
+    /// This default can be overridden at invocation time with `--model`.
+    pub fn default_model(self) -> &'static str {
+        match self {
+            Self::Principal => "github-copilot/claude-opus-4.6",
+            Self::Design => "github-copilot/claude-opus-4.6",
+            Self::Complexity => "github-copilot/claude-sonnet-4.6",
+            Self::Security => "github-copilot/claude-sonnet-4.6",
+        }
+    }
+
     /// Returns all variants in display order.
     pub fn all() -> &'static [Self] {
         &[
@@ -136,5 +152,40 @@ mod tests {
     #[test]
     fn all_returns_four_variants() {
         assert_eq!(ArchitectType::all().len(), 4);
+    }
+
+    #[test]
+    fn default_models_are_non_empty() {
+        for architect in ArchitectType::all() {
+            assert!(
+                !architect.default_model().is_empty(),
+                "{} default_model must not be empty",
+                architect.agent_name()
+            );
+        }
+    }
+
+    #[test]
+    fn principal_and_design_use_opus() {
+        assert_eq!(
+            ArchitectType::Principal.default_model(),
+            "github-copilot/claude-opus-4.6"
+        );
+        assert_eq!(
+            ArchitectType::Design.default_model(),
+            "github-copilot/claude-opus-4.6"
+        );
+    }
+
+    #[test]
+    fn complexity_and_security_use_sonnet() {
+        assert_eq!(
+            ArchitectType::Complexity.default_model(),
+            "github-copilot/claude-sonnet-4.6"
+        );
+        assert_eq!(
+            ArchitectType::Security.default_model(),
+            "github-copilot/claude-sonnet-4.6"
+        );
     }
 }
