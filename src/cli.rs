@@ -11,13 +11,15 @@ use crate::prompts::ArchitectType;
                   that agent active.\n\n\
                   The agent file is written to .opencode/agents/ in the current directory. \
                   Add .opencode/agents/arch-*.md to your .gitignore to avoid committing \
-                  auto-generated files."
+                  auto-generated files.\n\n\
+                  Run --clean after a review session to remove all generated agent files \
+                  and clean up empty directories."
 )]
 pub struct Cli {
     /// The architect persona to activate.
     ///
     /// One of: principal, design, complexity, security
-    #[arg(value_enum, required_unless_present = "list")]
+    #[arg(value_enum, required_unless_present_any = ["list", "clean"])]
     pub architect: Option<ArchitectType>,
 
     /// Launch opencode with full permissions (default: read-only).
@@ -50,6 +52,18 @@ pub struct Cli {
     /// opencode. Mutually exclusive with --full.
     #[arg(long, default_value_t = false, conflicts_with = "full")]
     pub review: bool,
+
+    /// Remove all arch-*.md agent files from .opencode/agents/ in the current
+    /// directory, then remove the directory (and .opencode/) if empty.
+    ///
+    /// Does not launch opencode. Useful for cleaning up after a review session.
+    /// The reviews/ directory is left untouched.
+    #[arg(
+        long,
+        default_value_t = false,
+        conflicts_with_all = ["full", "review", "dry_run"]
+    )]
+    pub clean: bool,
 }
 
 #[cfg(test)]
@@ -150,5 +164,33 @@ mod tests {
     #[test]
     fn review_and_full_are_mutually_exclusive() {
         assert!(parse(&["principal", "--review", "--full"]).is_err());
+    }
+
+    #[test]
+    fn parses_clean_flag_without_architect() {
+        let cli = parse(&["--clean"]).unwrap();
+        assert!(cli.clean);
+        assert!(cli.architect.is_none());
+    }
+
+    #[test]
+    fn clean_defaults_to_false() {
+        let cli = parse(&["principal"]).unwrap();
+        assert!(!cli.clean);
+    }
+
+    #[test]
+    fn clean_conflicts_with_full() {
+        assert!(parse(&["--clean", "--full"]).is_err());
+    }
+
+    #[test]
+    fn clean_conflicts_with_review() {
+        assert!(parse(&["--clean", "--review"]).is_err());
+    }
+
+    #[test]
+    fn clean_conflicts_with_dry_run() {
+        assert!(parse(&["--clean", "--dry-run"]).is_err());
     }
 }

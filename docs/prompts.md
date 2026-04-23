@@ -356,15 +356,17 @@ architecture_prompts principal
 architecture_prompts complexity
 architecture_prompts security
 architecture_prompts design
+architecture_prompts --clean          # remove generated agent files
 
 # With saved findings in reviews/
 architecture_prompts principal --review
 architecture_prompts complexity --review
 architecture_prompts security --review
 architecture_prompts design --review
+architecture_prompts --clean          # remove generated agent files; reviews/ is left untouched
 ```
 
-Each invocation overwrites the previous agent file for that persona, so you can re-run any step without cleanup. In `--review` mode, each run produces a timestamped file (`reviews/arch-<persona>-YYYY-MM-DD.md`) so findings accumulate rather than overwrite.
+Each invocation overwrites the previous agent file for that persona, so you can re-run any step without cleanup. In `--review` mode, each run produces a timestamped file (`reviews/arch-<persona>-YYYY-MM-DD.md`) so findings accumulate rather than overwrite. Run `--clean` at the end to remove all generated agent files from `.opencode/agents/`; the `reviews/` directory is left untouched.
 
 ---
 

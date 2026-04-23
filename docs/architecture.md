@@ -61,6 +61,37 @@ sequenceDiagram
 
 The critical detail is the `exec()` call: the Rust process is **replaced** by opencode, not spawned as a child. This means opencode inherits the terminal, all file descriptors, and the working directory cleanly. There is no Rust process running in the background.
 
+### `--clean` data flow
+
+Because `exec()` is a one-way door, the tool cannot clean up after opencode exits. The `--clean` flag provides an explicit cleanup step:
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant CLI as architecture_prompts
+    participant FS as Filesystem<br/>.opencode/agents/
+
+    User->>CLI: architecture_prompts --clean
+
+    CLI->>CLI: Parse args (clap)
+    CLI->>FS: Read .opencode/agents/
+
+    loop For each arch-*.md file
+        CLI->>FS: remove_file(arch-*.md)
+    end
+
+    opt agents/ is now empty
+        CLI->>FS: remove_dir(.opencode/agents/)
+    end
+
+    opt .opencode/ is now empty
+        CLI->>FS: remove_dir(.opencode/)
+    end
+
+    CLI-->>User: Lists removed files, exits
+    note over CLI: opencode is never launched
+```
+
 ---
 
 ## Module structure
@@ -103,7 +134,7 @@ graph TD
 | `cli.rs` | CLI argument definitions via `clap` derive | `Cli` |
 | `prompts.rs` | Compile-time prompt embedding; persona catalogue; model defaults | `ArchitectType` |
 | `agent.rs` | Generate the opencode agent `.md` file content; permission modes | `generate_agent_content()`, `PermissionMode` |
-| `launcher.rs` | Create directories, write file, exec opencode | `ensure_agent_dir()`, `ensure_reviews_dir()`, `write_agent_file()`, `launch_opencode()` |
+| `launcher.rs` | Create directories, write file, exec opencode, clean up agent files | `ensure_agent_dir()`, `ensure_reviews_dir()`, `write_agent_file()`, `launch_opencode()`, `clean_agent_files()` |
 | `error.rs` | Typed error enum | `AppError` |
 
 ---
@@ -201,6 +232,16 @@ flowchart TD
     opencode -->|reads| project
 ```
 
+### Cleanup via `--clean`
+
+Because `exec()` replaces the Rust process, there is no post-session hook to remove the agent file. The `--clean` flag provides an explicit cleanup step:
+
+- Removes all `arch-*.md` files from `.opencode/agents/` using filename pattern matching (`starts_with("arch-") && ends_with(".md")`).
+- Removes `agents/` and `.opencode/` if they become empty after cleanup, using `remove_dir` (not `remove_dir_all`) so non-empty directories are never accidentally deleted.
+- Does not touch `reviews/` — those contain user-valuable findings.
+- Does not require opencode to be installed (`check_opencode_in_path()` is not called).
+- Returns `Ok(vec![])` if `.opencode/agents/` does not exist — idempotent and safe to run at any time.
+
 ### Read-only permissions by default
 
 The generated agent frontmatter denies file edits and restricts bash by default:
@@ -284,6 +325,7 @@ flowchart LR
     A["Permission\nmode?"]
     A -->|"--full"| B["Full\nedit: allow\nwrite: allow\nbash: all"]
     A -->|"--review"| C["Review\nedit: deny except reviews/\nwrite: deny except reviews/\nbash: git read-only"]
+    A -->|"--clean"| E["Clean\nRemove arch-*.md\nNo opencode launch"]
     A -->|"default"| D["Read-only\nedit: deny\nwrite: deny\nbash: git read-only"]
 ```
 
@@ -304,9 +346,12 @@ flowchart TD
         E4[ReviewsDirCreation\ncannot create reviews/]
         E5[CurrentDir\ncannot determine cwd]
         E6[LaunchFailed\nexec returned an error]
+        E7[CleanReadDir\ncannot read .opencode/agents/]
+        E8[CleanRemoveFile\ncannot remove agent .md]
+        E9[CleanRemoveDir\ncannot remove empty directory]
     end
 
-    E --> E1 & E2 & E3 & E4 & E5 & E6
+    E --> E1 & E2 & E3 & E4 & E5 & E6 & E7 & E8 & E9
 ```
 
 No `unwrap()` or `expect()` calls exist in production code paths. The only `expect()` in `main.rs` guards a condition that clap enforces statically (architect is `Some` when `--list` is not set).
@@ -410,13 +455,13 @@ opencode is managed outside Nix and must be present in `PATH` at runtime. The bi
 flowchart TD
     subgraph unit["Unit tests (src/**/*.rs)"]
         U1["prompts.rs\n10 tests\nEmbedding, names, descriptions, model defaults"]
-        U2["cli.rs\n15 tests\nArg parsing, validation, --model, --review flags"]
+        U2["cli.rs\n20 tests\nArg parsing, validation, --model, --review, --clean flags"]
         U3["agent.rs\n18 tests\nFrontmatter generation, model field, review mode"]
-        U4["launcher.rs\n7 tests\nDir creation, file writing, reviews/ dir"]
+        U4["launcher.rs\n14 tests\nDir creation, file writing, reviews/ dir, clean"]
     end
 
     subgraph integration["Integration tests (tests/integration.rs)"]
-        I1["16 tests\n--list, --dry-run, model defaults, review mode, error cases\nRun against compiled binary"]
+        I1["19 tests\n--list, --dry-run, --clean, model defaults, review mode, error cases\nRun against compiled binary"]
     end
 
     subgraph excluded["Excluded from coverage"]

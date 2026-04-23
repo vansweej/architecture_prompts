@@ -35,18 +35,6 @@ pub fn ensure_reviews_dir(base: &Path) -> Result<PathBuf, AppError> {
     Ok(dir)
 }
 
-/// Verifies that `opencode` is available in `PATH`.
-#[cfg(not(tarpaulin_include))]
-pub fn check_opencode_in_path() -> Result<(), AppError> {
-    Command::new("opencode")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map_err(|_| AppError::OpenCodeNotFound)?;
-    Ok(())
-}
-
 /// Replaces the current process with `opencode --agent <agent_name>`.
 ///
 /// On success this function never returns — the Rust process is replaced by
@@ -63,6 +51,78 @@ pub fn launch_opencode(agent_name: &str) -> Result<(), AppError> {
         .exec();
     // exec() only returns on failure
     Err(AppError::LaunchFailed(err))
+}
+
+/// Verifies that `opencode` is available in `PATH`.
+#[cfg(not(tarpaulin_include))]
+pub fn check_opencode_in_path() -> Result<(), AppError> {
+    Command::new("opencode")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map_err(|_| AppError::OpenCodeNotFound)?;
+    Ok(())
+}
+
+/// Removes all `arch-*.md` files from `<base>/.opencode/agents/`.
+///
+/// After removing matching files, also removes the `agents/` directory if it
+/// is empty, and then `.opencode/` if that too becomes empty. Uses
+/// `remove_dir` (not `remove_dir_all`) so non-empty directories are never
+/// accidentally deleted.
+///
+/// Returns the list of file paths that were removed. Returns `Ok(vec![])` if
+/// `.opencode/agents/` does not exist — this is not an error.
+pub fn clean_agent_files(base: &Path) -> Result<Vec<PathBuf>, AppError> {
+    let agents_dir = base.join(".opencode").join("agents");
+
+    if !agents_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let entries = std::fs::read_dir(&agents_dir).map_err(AppError::CleanReadDir)?;
+
+    let mut removed = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(AppError::CleanReadDir)?;
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
+        if name.starts_with("arch-") && name.ends_with(".md") {
+            let path = entry.path();
+            std::fs::remove_file(&path).map_err(|source| AppError::CleanRemoveFile {
+                path: path.display().to_string(),
+                source,
+            })?;
+            removed.push(path);
+        }
+    }
+
+    // Remove agents/ if now empty.
+    if is_dir_empty(&agents_dir) {
+        std::fs::remove_dir(&agents_dir).map_err(|source| AppError::CleanRemoveDir {
+            path: agents_dir.display().to_string(),
+            source,
+        })?;
+
+        // Remove .opencode/ if now empty.
+        let opencode_dir = base.join(".opencode");
+        if is_dir_empty(&opencode_dir) {
+            std::fs::remove_dir(&opencode_dir).map_err(|source| AppError::CleanRemoveDir {
+                path: opencode_dir.display().to_string(),
+                source,
+            })?;
+        }
+    }
+
+    Ok(removed)
+}
+
+/// Returns `true` if `dir` exists and contains no entries.
+fn is_dir_empty(dir: &Path) -> bool {
+    std::fs::read_dir(dir)
+        .map(|mut d| d.next().is_none())
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -136,5 +196,82 @@ mod tests {
         ensure_reviews_dir(tmp.path()).unwrap();
         // Second call must not fail even when the directory already exists.
         ensure_reviews_dir(tmp.path()).unwrap();
+    }
+
+    // ── clean_agent_files ─────────────────────────────────────────────────────
+
+    fn create_agent_file(base: &std::path::Path, name: &str) -> PathBuf {
+        let dir = base.join(".opencode").join("agents");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        fs::write(&path, "content").unwrap();
+        path
+    }
+
+    #[test]
+    fn clean_removes_arch_files() {
+        let tmp = TempDir::new().unwrap();
+        let p1 = create_agent_file(tmp.path(), "arch-principal.md");
+        let p2 = create_agent_file(tmp.path(), "arch-security.md");
+        let removed = clean_agent_files(tmp.path()).unwrap();
+        assert_eq!(removed.len(), 2);
+        assert!(!p1.exists());
+        assert!(!p2.exists());
+    }
+
+    #[test]
+    fn clean_leaves_non_arch_files() {
+        let tmp = TempDir::new().unwrap();
+        create_agent_file(tmp.path(), "arch-principal.md");
+        let custom = create_agent_file(tmp.path(), "my-custom-agent.md");
+        let removed = clean_agent_files(tmp.path()).unwrap();
+        assert_eq!(removed.len(), 1);
+        assert!(custom.exists());
+    }
+
+    #[test]
+    fn clean_returns_empty_vec_when_dir_missing() {
+        let tmp = TempDir::new().unwrap();
+        let removed = clean_agent_files(tmp.path()).unwrap();
+        assert!(removed.is_empty());
+    }
+
+    #[test]
+    fn clean_removes_empty_agents_dir() {
+        let tmp = TempDir::new().unwrap();
+        create_agent_file(tmp.path(), "arch-principal.md");
+        clean_agent_files(tmp.path()).unwrap();
+        assert!(!tmp.path().join(".opencode").join("agents").exists());
+    }
+
+    #[test]
+    fn clean_removes_empty_opencode_dir() {
+        let tmp = TempDir::new().unwrap();
+        create_agent_file(tmp.path(), "arch-principal.md");
+        clean_agent_files(tmp.path()).unwrap();
+        assert!(!tmp.path().join(".opencode").exists());
+    }
+
+    #[test]
+    fn clean_preserves_opencode_dir_if_not_empty() {
+        let tmp = TempDir::new().unwrap();
+        create_agent_file(tmp.path(), "arch-principal.md");
+        // Put an extra file directly in .opencode/ so it is not empty after
+        // agents/ is removed.
+        let extra = tmp.path().join(".opencode").join("config.json");
+        fs::write(&extra, "{}").unwrap();
+        clean_agent_files(tmp.path()).unwrap();
+        assert!(tmp.path().join(".opencode").exists());
+        assert!(extra.exists());
+    }
+
+    #[test]
+    fn clean_preserves_agents_dir_if_not_empty() {
+        let tmp = TempDir::new().unwrap();
+        create_agent_file(tmp.path(), "arch-principal.md");
+        // Leave a non-arch file so agents/ is not empty after cleanup.
+        create_agent_file(tmp.path(), "my-agent.md");
+        clean_agent_files(tmp.path()).unwrap();
+        assert!(tmp.path().join(".opencode").join("agents").exists());
     }
 }

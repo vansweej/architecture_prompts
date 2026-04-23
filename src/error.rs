@@ -19,4 +19,21 @@ pub enum AppError {
 
     #[error("failed to launch opencode: {0}")]
     LaunchFailed(#[source] std::io::Error),
+
+    #[error("failed to read .opencode/agents/ directory: {0}")]
+    CleanReadDir(#[source] std::io::Error),
+
+    #[error("failed to remove agent file {path}: {source}")]
+    CleanRemoveFile {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to remove empty directory {path}: {source}")]
+    CleanRemoveDir {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
 }

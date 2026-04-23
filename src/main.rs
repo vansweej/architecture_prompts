@@ -10,7 +10,8 @@ use crate::agent::{PermissionMode, generate_agent_content};
 use crate::cli::Cli;
 use crate::error::AppError;
 use crate::launcher::{
-    check_opencode_in_path, ensure_reviews_dir, launch_opencode, write_agent_file,
+    check_opencode_in_path, clean_agent_files, ensure_reviews_dir, launch_opencode,
+    write_agent_file,
 };
 use crate::prompts::ArchitectType;
 
@@ -23,6 +24,20 @@ fn main() -> Result<(), AppError> {
 
     if cli.list {
         print_list();
+        return Ok(());
+    }
+
+    if cli.clean {
+        let cwd = std::env::current_dir().map_err(AppError::CurrentDir)?;
+        let removed = clean_agent_files(&cwd)?;
+        if removed.is_empty() {
+            eprintln!("No arch-*.md agent files found in .opencode/agents/");
+        } else {
+            for path in &removed {
+                eprintln!("Removed: {}", path.display());
+            }
+            eprintln!("Cleaned {} agent file(s)", removed.len());
+        }
         return Ok(());
     }
 

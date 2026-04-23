@@ -96,6 +96,9 @@ OPTIONS:
       --full   Launch opencode with full permissions (conflicts with --review)
       --review Run in review mode: read-only + can write findings to reviews/
                (conflicts with --full)
+      --clean  Remove all arch-*.md agent files from .opencode/agents/ in the
+               current directory and clean up empty directories. Does not
+               launch opencode. (conflicts with --full, --review, --dry-run)
       --list   List all available architect prompts with descriptions, then exit
       --dry-run
                Print the generated agent .md to stdout; do not write files or launch opencode
@@ -175,6 +178,17 @@ architecture_prompts principal --review
 
 Launches the principal architect in review mode. The persona can read all repo contents but can only write to `reviews/arch-principal-YYYY-MM-DD.md`. The `reviews/` directory is created automatically before opencode starts. A review-output instruction is appended to the persona's system prompt directing it to save its findings there.
 
+### Clean up after a review session
+
+```bash
+architecture_prompts --clean
+```
+
+Removes all `arch-*.md` files from `.opencode/agents/` in the current directory.
+If `.opencode/agents/` and `.opencode/` become empty after the removal, they are
+deleted too. The `reviews/` directory is left untouched — its findings are yours
+to keep or discard.
+
 ### Suggested review pipeline
 
 Run the personas in sequence for a thorough architecture review:
@@ -191,6 +205,9 @@ architecture_prompts security
 
 # 4. Formal verdict
 architecture_prompts design
+
+# 5. Clean up generated agent files
+architecture_prompts --clean
 ```
 
 ---
@@ -219,6 +236,15 @@ The agent file is overwritten on every invocation, so it always reflects the cur
 ```
 
 This project's own `.gitignore` already includes this entry.
+
+To remove all generated agent files after a review session, run:
+
+```bash
+architecture_prompts --clean
+```
+
+This deletes all `arch-*.md` files from `.opencode/agents/` and removes the
+directory (and `.opencode/` if empty) so no leftover files remain on disk.
 
 ---
 

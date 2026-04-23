@@ -2,6 +2,7 @@
 ///
 /// These tests require the binary to be built first. `cargo test` handles
 /// this automatically via the test harness.
+use std::fs;
 use std::process::Command;
 
 fn binary() -> Command {
@@ -217,5 +218,62 @@ fn review_and_full_flags_conflict() {
     assert!(
         !status.success(),
         "--review and --full must be mutually exclusive"
+    );
+}
+
+// ── --clean ───────────────────────────────────────────────────────────────────
+
+#[test]
+fn clean_exits_successfully_when_nothing_to_clean() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let status = binary()
+        .arg("--clean")
+        .current_dir(tmp.path())
+        .status()
+        .unwrap();
+    assert!(status.success(), "exit code: {}", status);
+}
+
+#[test]
+fn clean_does_not_require_architect_arg() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output = binary()
+        .arg("--clean")
+        .current_dir(tmp.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "--clean must not require an architect argument"
+    );
+}
+
+#[test]
+fn clean_removes_generated_agent_files() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    // Manually create the directory structure the tool would produce.
+    let agents_dir = tmp.path().join(".opencode").join("agents");
+    fs::create_dir_all(&agents_dir).unwrap();
+    fs::write(agents_dir.join("arch-principal.md"), "content").unwrap();
+    fs::write(agents_dir.join("arch-security.md"), "content").unwrap();
+
+    let output = binary()
+        .arg("--clean")
+        .current_dir(tmp.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "exit code: {}", output.status);
+
+    // Both arch files must be gone.
+    assert!(!agents_dir.join("arch-principal.md").exists());
+    assert!(!agents_dir.join("arch-security.md").exists());
+    // The now-empty directories must also be gone.
+    assert!(!agents_dir.exists());
+    assert!(!tmp.path().join(".opencode").exists());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Cleaned 2 agent file(s)"),
+        "expected cleaned count in stderr, got:\n{stderr}"
     );
 }
