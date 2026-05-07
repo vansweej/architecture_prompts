@@ -1,8 +1,4 @@
-// Phase 1: this module provides foundation types and generation functions for
-// the debate pipeline. It is wired into main.rs as `mod debate_agent` but none
-// of its public API is called from main() yet — that happens in Phase 2.
-// Suppress dead_code for the whole module until Phase 2 connects everything.
-#![allow(dead_code)]
+// Phase 1: foundation types and generation functions for the debate pipeline.
 
 use crate::prompts::{ArchitectType, DebateRole};
 

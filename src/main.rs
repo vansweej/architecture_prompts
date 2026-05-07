@@ -10,6 +10,7 @@ use clap::Parser;
 
 use crate::agent::{PermissionMode, generate_agent_content};
 use crate::cli::Cli;
+use crate::debate::{DebateConfig, run_debate};
 use crate::error::AppError;
 use crate::launcher::{
     check_opencode_in_path, clean_agent_files, ensure_reviews_dir, launch_opencode,
@@ -40,6 +41,21 @@ fn main() -> Result<(), AppError> {
             }
             eprintln!("Cleaned {} agent file(s)", removed.len());
         }
+        return Ok(());
+    }
+
+    if cli.debate {
+        use crate::debate::RealRunner;
+        check_opencode_in_path()?;
+        let cwd = std::env::current_dir().map_err(AppError::CurrentDir)?;
+        let config = DebateConfig {
+            model: cli.model,
+            concurrency: cli.concurrency,
+            base_dir: cwd,
+            devils_advocate: None,
+        };
+        run_debate(&config, &RealRunner)?;
+        eprintln!("Debate complete. Final report written to: reviews/final-report.md");
         return Ok(());
     }
 

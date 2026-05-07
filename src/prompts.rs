@@ -4,8 +4,6 @@ const PRINCIPAL: &str = include_str!("../prompts/system/principal.md");
 const DESIGN: &str = include_str!("../prompts/system/design.md");
 const COMPLEXITY: &str = include_str!("../prompts/system/complexity.md");
 const SECURITY: &str = include_str!("../prompts/system/security.md");
-// Used by DebateRole::Moderator — suppressed until Phase 2 wires the debate pipeline.
-#[allow(dead_code)]
 const MODERATOR: &str = include_str!("../prompts/system/moderator.md");
 
 /// The four available architect personas, embedded at compile time.
@@ -95,18 +93,13 @@ impl ArchitectType {
 /// exists only inside the debate pipeline — so mixing it into `ArchitectType`
 /// would pollute the user-facing help text and require special-casing in
 /// existing code paths.
-// Suppressed until Phase 2 wires the debate pipeline to main().
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DebateRole {
     /// Synthesis moderator — reads all round reports and produces the final verdict.
     Moderator,
 }
 
-// Suppressed until Phase 2 wires the debate pipeline to main().
-#[allow(dead_code)]
-impl DebateRole {
-    /// Returns the opencode agent name for this role.
+impl DebateRole {    /// Returns the opencode agent name for this role.
     pub fn agent_name(self) -> &'static str {
         match self {
             Self::Moderator => "arch-moderator",
