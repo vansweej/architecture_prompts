@@ -307,6 +307,41 @@ fn debate_flag_does_not_require_architect_arg() {
     );
 }
 
+/// Verifies `--debate --devils-advocate complexity` parses successfully; the
+/// binary still fails (no opencode) but the failure must not be a clap error.
+#[test]
+fn debate_with_devils_advocate_parses_without_clap_error() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output = binary()
+        .args(["--debate", "--devils-advocate", "complexity"])
+        .current_dir(tmp.path())
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("error: unexpected argument"),
+        "--devils-advocate must be a recognised flag, stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("required"),
+        "no 'required argument' clap error expected, stderr:\n{stderr}"
+    );
+}
+
+/// `--devils-advocate` without `--debate` must be rejected by clap.
+#[test]
+fn devils_advocate_without_debate_is_rejected() {
+    let output = binary()
+        .args(["--devils-advocate", "security"])
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "--devils-advocate without --debate must fail"
+    );
+}
+
 /// Full end-to-end debate pipeline smoke test.
 ///
 /// Requires a live `opencode` binary in PATH and a repository to review.

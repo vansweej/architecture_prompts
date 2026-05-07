@@ -29,7 +29,6 @@ pub struct DebateConfig {
     /// Reserved for Phase 4 — designates one architect as devil's advocate in
     /// Round 2 so it challenges all consensus findings instead of the standard
     /// challenge/endorse flow.
-    #[allow(dead_code)]
     pub devils_advocate: Option<ArchitectType>,
 }
 
@@ -117,6 +116,7 @@ pub fn run_round1<R: ProcessRunner>(config: &DebateConfig, runner: &R) -> Result
             round: DebateRound::Round1,
             own_report: None,
             peer_reports: vec![],
+            is_devils_advocate: false,
         };
         let content = generate_debate_agent(architect, &context, model);
         write_named_agent_file(&config.base_dir, architect.agent_name(), &content)?;
@@ -172,6 +172,7 @@ pub fn run_round2<R: ProcessRunner>(config: &DebateConfig, runner: &R) -> Result
             round: DebateRound::Round2,
             own_report: Some(round1_contents[i].as_str()),
             peer_reports: peers,
+            is_devils_advocate: config.devils_advocate == Some(architect),
         };
         let content = generate_debate_agent(architect, &context, model);
         write_named_agent_file(&config.base_dir, architect.agent_name(), &content)?;
@@ -220,7 +221,11 @@ pub fn run_synthesis<R: ProcessRunner>(config: &DebateConfig, runner: &R) -> Res
         .collect();
 
     let model = config.effective_model(DebateRole::Moderator.default_model());
-    let moderator_content = generate_moderator_agent(&peer_reports, model);
+    let moderator_content = generate_moderator_agent(
+        &peer_reports,
+        model,
+        config.devils_advocate.as_ref().map(|a| a.agent_name()),
+    );
     write_named_agent_file(
         &config.base_dir,
         DebateRole::Moderator.agent_name(),
@@ -844,6 +849,114 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let config = make_config(&tmp);
         assert_eq!(config.effective_model("default/model"), "default/model");
+    }
+
+    // ── devil's advocate — run_round2 ─────────────────────────────────────────
+
+    #[test]
+    fn run_round2_da_agent_file_contains_da_template_content() {
+        let tmp = TempDir::new().unwrap();
+        let config = DebateConfig {
+            model: None,
+            concurrency: 4,
+            base_dir: tmp.path().to_path_buf(),
+            devils_advocate: Some(ArchitectType::Complexity),
+        };
+        ensure_round_dirs(tmp.path()).unwrap();
+        seed_round1(tmp.path());
+        let runner = MockRunner { base_dir: tmp.path().to_path_buf() };
+        run_round2(&config, &runner).unwrap();
+
+        // The arch-complexity agent file must use the DA template.
+        let agent_file = tmp
+            .path()
+            .join(".opencode")
+            .join("agents")
+            .join("arch-complexity.md");
+        let content = fs::read_to_string(agent_file).unwrap();
+        assert!(
+            content.contains("devil's advocate"),
+            "DA-designated agent file must contain DA template wording"
+        );
+    }
+
+    #[test]
+    fn run_round2_non_da_agents_do_not_use_da_template() {
+        let tmp = TempDir::new().unwrap();
+        let config = DebateConfig {
+            model: None,
+            concurrency: 4,
+            base_dir: tmp.path().to_path_buf(),
+            devils_advocate: Some(ArchitectType::Complexity),
+        };
+        ensure_round_dirs(tmp.path()).unwrap();
+        seed_round1(tmp.path());
+        let runner = MockRunner { base_dir: tmp.path().to_path_buf() };
+        run_round2(&config, &runner).unwrap();
+
+        // Non-DA agents (principal, design, security) must use the standard template.
+        for arch in &[ArchitectType::Principal, ArchitectType::Design, ArchitectType::Security] {
+            let agent_file = tmp
+                .path()
+                .join(".opencode")
+                .join("agents")
+                .join(format!("{}.md", arch.agent_name()));
+            let content = fs::read_to_string(&agent_file).unwrap();
+            assert!(
+                !content.contains("devil's advocate"),
+                "{} must use the standard Round 2 template, not DA",
+                arch.agent_name()
+            );
+        }
+    }
+
+    #[test]
+    fn run_synthesis_moderator_file_contains_da_notice_when_da_set() {
+        let tmp = TempDir::new().unwrap();
+        let config = DebateConfig {
+            model: None,
+            concurrency: 4,
+            base_dir: tmp.path().to_path_buf(),
+            devils_advocate: Some(ArchitectType::Security),
+        };
+        seed_all_reports(tmp.path());
+        let runner = MockRunner { base_dir: tmp.path().to_path_buf() };
+        run_synthesis(&config, &runner).unwrap();
+
+        let agent_file = tmp
+            .path()
+            .join(".opencode")
+            .join("agents")
+            .join("arch-moderator.md");
+        let content = fs::read_to_string(agent_file).unwrap();
+        assert!(
+            content.contains("Devil's Advocate Notice"),
+            "moderator agent file must include DA notice when DA is configured"
+        );
+        assert!(
+            content.contains(ArchitectType::Security.agent_name()),
+            "moderator DA notice must name the designated advocate"
+        );
+    }
+
+    #[test]
+    fn run_synthesis_moderator_file_has_no_da_notice_without_da() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(&tmp);
+        seed_all_reports(tmp.path());
+        let runner = MockRunner { base_dir: tmp.path().to_path_buf() };
+        run_synthesis(&config, &runner).unwrap();
+
+        let agent_file = tmp
+            .path()
+            .join(".opencode")
+            .join("agents")
+            .join("arch-moderator.md");
+        let content = fs::read_to_string(agent_file).unwrap();
+        assert!(
+            !content.contains("Devil's Advocate Notice"),
+            "moderator agent file must NOT include DA notice when no DA configured"
+        );
     }
 
     // ── error display ─────────────────────────────────────────────────────────

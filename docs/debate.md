@@ -108,6 +108,9 @@ architecture_prompts --debate --model github-copilot/claude-sonnet-4.6
 
 # Combine model override and concurrency limit
 architecture_prompts --debate --model openai/gpt-5 --concurrency 1
+
+# Designate the complexity architect as devil's advocate in Round 2
+architecture_prompts --debate --devils-advocate complexity
 ```
 
 ### Flag reference
@@ -117,12 +120,15 @@ architecture_prompts --debate --model openai/gpt-5 --concurrency 1
 | `--debate` | `false` | Enable the multi-round debate pipeline. Mutually exclusive with all single-agent flags and the positional `ARCHITECT` argument. |
 | `--concurrency <N>` | `4` | Max parallel `opencode run` processes per round. Requires `--debate`. Zero is treated as 1. |
 | `--model <PROVIDER/MODEL>` | per-persona default | Override the LLM model for all agents in this run. |
+| `--devils-advocate <ARCHITECT>` | `None` | Designate one architect (`principal`\|`design`\|`complexity`\|`security`) as the devil's advocate for Round 2. Requires `--debate`. |
 
 ### Conflicts
 
 `--debate` is mutually exclusive with: `--full`, `--review`, `--dry-run`, `--clean`, and the positional `ARCHITECT` argument.
 
 `--concurrency` is only valid with `--debate`.
+
+`--devils-advocate` is only valid with `--debate`.
 
 ### Exit behaviour
 
@@ -192,13 +198,14 @@ pub struct DebateContext<'a> {
     pub round: DebateRound,
     pub own_report: Option<&'a str>,
     pub peer_reports: Vec<PeerReport<'a>>,
+    pub is_devils_advocate: bool,
 }
 ```
 
-| Round  | `own_report` | `peer_reports`         |
-|--------|-------------|------------------------|
-| Round1 | `None`      | empty                  |
-| Round2 | `Some(…)`   | three peer reports     |
+| Round  | `own_report` | `peer_reports`     | `is_devils_advocate`          |
+|--------|--------------|--------------------|-------------------------------|
+| Round1 | `None`       | empty              | `false`                       |
+| Round2 | `Some(…)`    | three peer reports | `true` for designated persona |
 
 ### `DebateRole`
 
@@ -213,6 +220,37 @@ Intentionally separate from `ArchitectType`. `ArchitectType` derives
 is never invoked standalone — it exists only inside the debate pipeline.
 Mixing it into `ArchitectType` would pollute the help text and require
 special-casing in existing single-agent code paths.
+
+---
+
+## Devil's Advocate Mode
+
+When `--devils-advocate <ARCHITECT>` is set, the designated persona uses a
+different Round 2 template (`prompts/debate/round2_devils_advocate.md`) instead
+of the standard balanced challenge/endorse template.
+
+**What the devil's advocate does in Round 2:**
+1. Identifies consensus positions that appear across two or more peer reports.
+2. Constructs the strongest plausible counter-argument for each consensus claim.
+3. Surfaces implicit assumptions in the consensus as risks.
+4. Proposes at least one alternative interpretation of the evidence.
+5. Notes any own Round 1 finding that contradicts the emerging consensus.
+
+The adversarial challenges must be grounded and arguable — the goal is
+stress-testing, not sabotage.
+
+**Moderator notice:**
+
+When a devil's advocate is designated, the moderator agent file receives a
+"Devil's Advocate Notice" prepended to the reports section. This tells the
+moderator that the designated persona's Round 2 report is adversarial by design
+and should be weighted as a stress-test rather than a sincere disagreement.
+
+**Output path:**
+
+The devil's advocate still writes to `reviews/round2/arch-<name>.md` — the same
+path as any other Round 2 agent. The adversarial nature is signalled by the
+moderator notice, not by a separate file.
 
 ---
 
@@ -395,3 +433,17 @@ graph TD
 | `tests/integration.rs` | Added `debate_flag_does_not_require_architect_arg` (non-ignored) and `debate_pipeline_runs_end_to_end` (`#[ignore]`) |
 | `README.md` | Added debate introduction, updated CLI reference, added `--debate` examples section, updated permission modes table |
 | `docs/debate.md` | Added CLI Reference section (flags, conflicts, exit behaviour) |
+
+## Files Changed in Phase 4
+
+| File | Change |
+|------|--------|
+| `prompts/debate/round2_devils_advocate.md` | New adversarial Round 2 template with `{own_report}` and `{peer_reports}` placeholders |
+| `src/debate_agent.rs` | Added `ROUND2_DEVILS_ADVOCATE` const; `is_devils_advocate: bool` field on `DebateContext`; `generate_round2_agent()` branches on flag; `generate_moderator_agent()` accepts `devils_advocate: Option<&str>` and prepends DA notice; 11 new unit tests |
+| `src/debate.rs` | `run_round2` sets `is_devils_advocate: config.devils_advocate == Some(architect)`; `run_synthesis` passes DA name to `generate_moderator_agent`; `#[allow(dead_code)]` removed from `devils_advocate` field; 4 new unit tests |
+| `src/cli.rs` | Added `--devils-advocate <ARCHITECT>` flag (`Option<ArchitectType>`, `value_enum`, `requires = "debate"`); 4 new unit tests |
+| `src/main.rs` | Passes `cli.devils_advocate` into `DebateConfig` |
+| `src/prompts.rs` | `ArchitectType` now derives `PartialEq, Eq` (required for `== Some(architect)` comparison) |
+| `tests/integration.rs` | Added `debate_with_devils_advocate_parses_without_clap_error` and `devils_advocate_without_debate_is_rejected` |
+| `README.md` | Updated CLI reference synopsis, options table, and debate mode section with `--devils-advocate` |
+| `docs/debate.md` | Updated `DebateContext` type model table; added Devil's Advocate Mode section; updated CLI reference table and Conflicts; added this change-log |
