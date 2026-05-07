@@ -204,6 +204,105 @@ size.
 
 ---
 
+## Orchestration Engine (`src/debate.rs`)
+
+### `DebateConfig`
+
+```rust
+pub struct DebateConfig {
+    pub model: Option<String>,          // global model override (None = per-persona default)
+    pub concurrency: usize,             // max parallel opencode processes per round
+    pub base_dir: PathBuf,              // working directory
+    pub devils_advocate: Option<ArchitectType>, // Phase 4: devil's advocate designation
+}
+```
+
+### `ProcessRunner` trait
+
+Subprocess interaction is hidden behind a trait so orchestration logic can be
+unit-tested with a `MockRunner` that writes synthetic output files instead of
+calling opencode:
+
+```rust
+pub trait ProcessRunner: Send + Sync {
+    fn run_agent(&self, agent_name: &str, prompt: &str) -> Result<(), AppError>;
+}
+```
+
+`RealRunner` (production) calls `opencode run --agent <name> "<prompt>"`.
+`MockRunner` (tests) writes placeholder files to the expected output paths.
+
+### Concurrency control
+
+`run_round1` and `run_round2` split the four agents into chunks of at most
+`config.concurrency` and run each chunk in parallel using `std::thread::scope`.
+All threads in a chunk complete before the next chunk starts (fail-fast at
+chunk boundaries, not mid-chunk).
+
+```
+4 agents, concurrency=4  →  1 batch of 4 parallel threads
+4 agents, concurrency=2  →  2 batches of 2 parallel threads each
+4 agents, concurrency=1  →  4 sequential single-thread batches
+```
+
+Zero is silently treated as 1 to avoid a `chunks(0)` panic.
+
+### Fail-fast verification
+
+After every batch, `verify_round_outputs` checks that each expected output file
+exists on disk.  Output file existence is checked **in addition to** exit code
+because `opencode run` may exit 0 even when the LLM declines to write output.
+The file check is the authoritative signal.
+
+```
+Batch completes
+    │
+    ▼
+Any non-zero exit?  ──yes──►  DebateAgentFailed (fail fast)
+    │ no
+    ▼
+All output files present?  ──no──►  DebateOutputMissing (fail fast)
+    │ yes
+    ▼
+Next batch (or done)
+```
+
+### Error variants
+
+| Error | When |
+|-------|------|
+| `DebateAgentFailed { round, agent, code }` | `opencode run` exits non-zero |
+| `DebateOutputMissing { round, agent, path }` | expected output file absent after run |
+| `DebateReportRead { path, source }` | cannot read a previous round's report file |
+| `DebateRoundDirCreation(io::Error)` | cannot create `reviews/round1/` or `reviews/round2/` |
+| `DebateSpawnFailed(io::Error)` | cannot spawn the `opencode` subprocess |
+
+### `run_debate` call graph
+
+```
+run_debate(config, runner)
+├── ensure_round_dirs()           creates reviews/round1/ and reviews/round2/
+├── run_round1(config, runner)
+│   ├── generate_debate_agent() × 4    builds Round 1 agent files
+│   ├── write_named_agent_file() × 4   writes to .opencode/agents/
+│   ├── spawn_batch()            runs up to concurrency agents in parallel
+│   └── verify_round_outputs()   checks reviews/round1/arch-*.md exist
+├── run_round2(config, runner)
+│   ├── read round1 reports × 4
+│   ├── generate_debate_agent() × 4    builds Round 2 agent files with peer context
+│   ├── write_named_agent_file() × 4
+│   ├── spawn_batch()
+│   └── verify_round_outputs()   checks reviews/round2/arch-*.md exist
+└── run_synthesis(config, runner)
+    ├── read all 8 reports
+    ├── generate_moderator_agent()     builds moderator agent file
+    ├── write_named_agent_file()
+    ├── spawn_batch()            runs arch-moderator
+    └── verify final-report.md exists
+```
+
+---
+
 ## Files Added in Phase 1
 
 | File | Purpose |
@@ -213,3 +312,10 @@ size.
 | `prompts/system/moderator.md` | Moderator system prompt embedded at compile time |
 | `prompts/debate/round2_challenge.md` | Round 2 challenge instruction template with `{own_report}` and `{peer_reports}` placeholders |
 | `docs/debate.md` | This document |
+
+## Files Added in Phase 2
+
+| File | Purpose |
+|------|---------|
+| `src/debate.rs` | Orchestration engine: `DebateConfig`, `ProcessRunner` trait, `RealRunner`, `MockRunner` (tests), `ensure_round_dirs`, `run_round1/2/synthesis`, `run_debate`, `spawn_batch` |
+| `src/error.rs` | Five new `AppError` variants: `DebateAgentFailed`, `DebateOutputMissing`, `DebateReportRead`, `DebateRoundDirCreation`, `DebateSpawnFailed` |

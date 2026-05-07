@@ -36,4 +36,25 @@ pub enum AppError {
         #[source]
         source: std::io::Error,
     },
+
+    // ── debate errors ──────────────────────────────────────────────────────────
+
+    #[error("debate round {round} agent {agent} failed with exit code {code}")]
+    DebateAgentFailed { round: u8, agent: String, code: i32 },
+
+    #[error("debate round {round} agent {agent} did not produce expected output at {path}")]
+    DebateOutputMissing { round: u8, agent: String, path: String },
+
+    #[error("failed to read debate report {path}: {source}")]
+    DebateReportRead {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to create debate round directory: {0}")]
+    DebateRoundDirCreation(#[source] std::io::Error),
+
+    #[error("failed to spawn opencode for debate: {0}")]
+    DebateSpawnFailed(#[source] std::io::Error),
 }
