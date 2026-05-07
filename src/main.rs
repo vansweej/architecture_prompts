@@ -52,7 +52,7 @@ fn main() -> Result<(), AppError> {
             model: cli.model,
             concurrency: cli.concurrency,
             base_dir: cwd,
-            devils_advocate: None,
+            devils_advocate: cli.devils_advocate,
         };
         run_debate(&config, &RealRunner)?;
         eprintln!("Debate complete. Final report written to: reviews/final-report.md");

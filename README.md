@@ -85,7 +85,7 @@ cargo build
 
 ```
 architecture_prompts [OPTIONS] [ARCHITECT]
-architecture_prompts --debate [--concurrency <N>] [--model <PROVIDER/MODEL>]
+architecture_prompts --debate [--concurrency <N>] [--devils-advocate <ARCHITECT>] [--model <PROVIDER/MODEL>]
 
 ARGUMENTS:
   [ARCHITECT]    Architect persona to activate
@@ -105,6 +105,11 @@ OPTIONS:
       --concurrency <N>
                 Max concurrent opencode processes per debate round (default: 4).
                 Only valid with --debate.
+      --devils-advocate <ARCHITECT>
+                Designate one architect (principal|design|complexity|security) as
+                the devil's advocate for Round 2.  That persona will mount the
+                strongest possible challenge to consensus findings rather than the
+                standard balanced challenge/endorse flow.  Only valid with --debate.
       --clean  Remove all arch-*.md agent files from .opencode/agents/ in the
                 current directory and clean up empty directories. Does not
                 launch opencode. (conflicts with --full, --review, --dry-run)
@@ -241,10 +246,19 @@ architecture_prompts --debate --concurrency 2
 
 # Override the model for all debate agents
 architecture_prompts --debate --model github-copilot/claude-sonnet-4.6
+
+# Designate the complexity architect as devil's advocate in Round 2
+architecture_prompts --debate --devils-advocate complexity
 ```
 
 `--concurrency` defaults to 4 (run all four Round 1 agents in parallel). Set it
 to 1 to run agents sequentially.
+
+`--devils-advocate` designates one architect to mount an adversarial challenge
+to consensus findings in Round 2, rather than the standard balanced
+challenge/endorse flow.  The moderator receives a notice so it can weight the
+adversarial challenges appropriately.  The option is entirely optional and
+defaults to off.
 
 See [docs/debate.md](docs/debate.md) for a full description of the protocol,
 permission model, and orchestration internals.

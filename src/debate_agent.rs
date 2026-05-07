@@ -3,6 +3,8 @@
 use crate::prompts::{ArchitectType, DebateRole};
 
 const ROUND2_CHALLENGE: &str = include_str!("../prompts/debate/round2_challenge.md");
+const ROUND2_DEVILS_ADVOCATE: &str =
+    include_str!("../prompts/debate/round2_devils_advocate.md");
 
 /// Which round of the debate this agent participates in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,10 +27,13 @@ pub struct PeerReport<'a> {
 
 /// Context injected into a debate agent for a given round.
 ///
-/// - Round 1: `own_report` is `None` and `peer_reports` is empty — no context
-///   is available yet.
-/// - Round 2: `own_report` is the agent's own Round 1 output; `peer_reports`
-///   contains the three peer Round 1 reports.
+/// - Round 1: `own_report` is `None`, `peer_reports` is empty, and
+///   `is_devils_advocate` is `false` — no context is available yet.
+/// - Round 2 standard: `own_report` is the agent's own Round 1 output;
+///   `peer_reports` contains the three peer Round 1 reports.
+/// - Round 2 devil's advocate: same as Round 2 standard but
+///   `is_devils_advocate` is `true`, which selects the adversarial
+///   challenge template instead of the balanced one.
 #[derive(Debug)]
 pub struct DebateContext<'a> {
     /// The round this context is for.
@@ -37,6 +42,10 @@ pub struct DebateContext<'a> {
     pub own_report: Option<&'a str>,
     /// Peer agents' reports from the previous round (empty in Round 1).
     pub peer_reports: Vec<PeerReport<'a>>,
+    /// When `true` the agent uses the devil's advocate challenge template
+    /// instead of the standard balanced-challenge template.
+    /// Only meaningful in Round 2; ignored in Round 1.
+    pub is_devils_advocate: bool,
 }
 
 /// Generates the full content of an opencode agent `.md` file for a debate
@@ -65,15 +74,35 @@ pub fn generate_debate_agent(
 ///
 /// All eight debate reports (4× Round 1 + 4× Round 2) are injected inline
 /// into the agent body so that no external fetching is required.
-pub fn generate_moderator_agent(all_reports: &[PeerReport<'_>], model: &str) -> String {
+///
+/// If `devils_advocate` is `Some(agent_name)`, a notice is prepended to the
+/// reports section so the moderator can weight that agent's Round 2 challenges
+/// appropriately.
+pub fn generate_moderator_agent(
+    all_reports: &[PeerReport<'_>],
+    model: &str,
+    devils_advocate: Option<&str>,
+) -> String {
     let role = DebateRole::Moderator;
+    let da_notice = match devils_advocate {
+        Some(name) => format!(
+            "## Devil's Advocate Notice\n\n\
+             `{name}` was designated as the devil's advocate for Round 2. \
+             Its Round 2 report contains adversarial challenges to the consensus — \
+             not necessarily its genuine position. \
+             Treat its Round 2 challenges as stress-tests rather than sincere disagreements \
+             when weighting the panel's overall conclusions.\n\n"
+        ),
+        None => String::new(),
+    };
     format!(
-        "{}\n{}\n\n{}\n\n## Output Instructions\n\n\
+        "{}\n{}\n\n{}{}\n\n## Output Instructions\n\n\
          Save your synthesis report to `reviews/final-report.md`. \
          The directory already exists. \
          Use the write tool to create the file.",
         moderator_frontmatter(role, model),
         role.prompt(),
+        da_notice,
         render_all_reports(all_reports),
     )
 }
@@ -103,9 +132,15 @@ fn generate_round2_agent(
     let own = context.own_report.unwrap_or("*(not available)*");
     let peer_block = render_peer_reports(&context.peer_reports);
 
-    // Substitute the {own_report} and {peer_reports} placeholders in the
-    // challenge template.
-    let challenge_body = ROUND2_CHALLENGE
+    // Select the appropriate Round 2 template.
+    let template = if context.is_devils_advocate {
+        ROUND2_DEVILS_ADVOCATE
+    } else {
+        ROUND2_CHALLENGE
+    };
+
+    // Substitute the {own_report} and {peer_reports} placeholders.
+    let challenge_body = template
         .replace("{own_report}", own)
         .replace("{peer_reports}", &peer_block);
 
@@ -237,6 +272,7 @@ mod tests {
             round: DebateRound::Round1,
             own_report: None,
             peer_reports: vec![],
+            is_devils_advocate: false,
         }
     }
 
@@ -248,6 +284,7 @@ mod tests {
             round: DebateRound::Round2,
             own_report: Some(own),
             peer_reports: peers,
+            is_devils_advocate: false,
         }
     }
 
@@ -478,6 +515,7 @@ mod tests {
             round: DebateRound::Round2,
             own_report: None,
             peer_reports: vec![],
+            is_devils_advocate: false,
         };
         let content = generate_debate_agent(
             ArchitectType::Design,
@@ -528,14 +566,16 @@ mod tests {
             agent_name: "arch-principal",
             content: "principal report",
         }];
-        let content = generate_moderator_agent(&reports, DebateRole::Moderator.default_model());
+        let content =
+            generate_moderator_agent(&reports, DebateRole::Moderator.default_model(), None);
         assert!(content.starts_with("---\n"));
     }
 
     #[test]
     fn moderator_content_allows_final_report_glob() {
         let reports: Vec<PeerReport<'_>> = vec![];
-        let content = generate_moderator_agent(&reports, DebateRole::Moderator.default_model());
+        let content =
+            generate_moderator_agent(&reports, DebateRole::Moderator.default_model(), None);
         assert!(
             content.contains("\"reviews/final-report.md\": allow"),
             "moderator agent must allow writes to reviews/final-report.md"
@@ -545,7 +585,8 @@ mod tests {
     #[test]
     fn moderator_content_has_webfetch_deny() {
         let reports: Vec<PeerReport<'_>> = vec![];
-        let content = generate_moderator_agent(&reports, DebateRole::Moderator.default_model());
+        let content =
+            generate_moderator_agent(&reports, DebateRole::Moderator.default_model(), None);
         assert!(
             content.contains("webfetch: deny"),
             "moderator agent must set webfetch: deny"
@@ -572,7 +613,8 @@ mod tests {
                 content: "complexity round2",
             },
         ];
-        let content = generate_moderator_agent(&reports, DebateRole::Moderator.default_model());
+        let content =
+            generate_moderator_agent(&reports, DebateRole::Moderator.default_model(), None);
         for r in &reports {
             assert!(
                 content.contains(r.agent_name),
@@ -590,7 +632,8 @@ mod tests {
     #[test]
     fn moderator_content_contains_output_instruction() {
         let reports: Vec<PeerReport<'_>> = vec![];
-        let content = generate_moderator_agent(&reports, DebateRole::Moderator.default_model());
+        let content =
+            generate_moderator_agent(&reports, DebateRole::Moderator.default_model(), None);
         assert!(
             content.contains("reviews/final-report.md"),
             "moderator agent must reference its expected output path"
@@ -600,7 +643,8 @@ mod tests {
     #[test]
     fn moderator_content_contains_system_prompt() {
         let reports: Vec<PeerReport<'_>> = vec![];
-        let content = generate_moderator_agent(&reports, DebateRole::Moderator.default_model());
+        let content =
+            generate_moderator_agent(&reports, DebateRole::Moderator.default_model(), None);
         // The moderator system prompt body must be present.
         assert!(
             !content.is_empty(),
@@ -616,14 +660,15 @@ mod tests {
     fn moderator_content_contains_correct_model() {
         let reports: Vec<PeerReport<'_>> = vec![];
         let model = "github-copilot/claude-opus-4.6";
-        let content = generate_moderator_agent(&reports, model);
+        let content = generate_moderator_agent(&reports, model, None);
         assert!(content.contains("model: github-copilot/claude-opus-4.6"));
     }
 
     #[test]
     fn moderator_content_denies_bash_wildcard() {
         let reports: Vec<PeerReport<'_>> = vec![];
-        let content = generate_moderator_agent(&reports, DebateRole::Moderator.default_model());
+        let content =
+            generate_moderator_agent(&reports, DebateRole::Moderator.default_model(), None);
         // Moderator has no bash allow rules — only the wildcard deny.
         assert!(content.contains("bash:"));
         assert!(content.contains("\"*\": deny"));
@@ -664,5 +709,138 @@ mod tests {
         assert!(result.contains("## All Architect Reports"));
         assert!(result.contains("arch-design"));
         assert!(result.contains("design verdict"));
+    }
+
+    // ── devil's advocate (Round 2) ────────────────────────────────────────────
+
+    fn round2_da_ctx<'a>(own: &'a str, peers: Vec<PeerReport<'a>>) -> DebateContext<'a> {
+        DebateContext {
+            round: DebateRound::Round2,
+            own_report: Some(own),
+            peer_reports: peers,
+            is_devils_advocate: true,
+        }
+    }
+
+    #[test]
+    fn round2_da_selects_devils_advocate_template() {
+        let ctx = round2_da_ctx("my r1 report", vec![]);
+        let content = generate_debate_agent(
+            ArchitectType::Complexity,
+            &ctx,
+            default_model(ArchitectType::Complexity),
+        );
+        // The DA template contains unique wording not in the standard template.
+        assert!(
+            content.contains("devil's advocate"),
+            "DA agent must reference the devil's advocate role"
+        );
+    }
+
+    #[test]
+    fn round2_standard_does_not_contain_devils_advocate_wording() {
+        let ctx = round2_ctx("my r1 report", vec![]);
+        let content = generate_debate_agent(
+            ArchitectType::Complexity,
+            &ctx,
+            default_model(ArchitectType::Complexity),
+        );
+        assert!(
+            !content.contains("devil's advocate"),
+            "Standard Round 2 agent must NOT contain DA wording"
+        );
+    }
+
+    #[test]
+    fn round2_da_injects_own_report() {
+        let own = "My own DA round 1 findings.";
+        let ctx = round2_da_ctx(own, vec![]);
+        let content = generate_debate_agent(
+            ArchitectType::Security,
+            &ctx,
+            default_model(ArchitectType::Security),
+        );
+        assert!(content.contains(own));
+    }
+
+    #[test]
+    fn round2_da_injects_peer_reports() {
+        let peer_content = "Design peer r1 content.";
+        let peers = vec![PeerReport {
+            agent_name: "arch-design",
+            content: peer_content,
+        }];
+        let ctx = round2_da_ctx("own r1", peers);
+        let content = generate_debate_agent(
+            ArchitectType::Principal,
+            &ctx,
+            default_model(ArchitectType::Principal),
+        );
+        assert!(content.contains("arch-design"));
+        assert!(content.contains(peer_content));
+    }
+
+    #[test]
+    fn round2_da_output_path_same_as_standard_round2() {
+        let ctx = round2_da_ctx("own r1", vec![]);
+        let content = generate_debate_agent(
+            ArchitectType::Complexity,
+            &ctx,
+            default_model(ArchitectType::Complexity),
+        );
+        assert!(
+            content.contains("reviews/round2/arch-complexity.md"),
+            "DA agent must still write to round2 output path"
+        );
+    }
+
+    // ── generate_moderator_agent — DA notice ──────────────────────────────────
+
+    #[test]
+    fn moderator_with_da_contains_da_notice() {
+        let reports = vec![PeerReport {
+            agent_name: "arch-complexity",
+            content: "complexity r1",
+        }];
+        let content =
+            generate_moderator_agent(&reports, DebateRole::Moderator.default_model(), Some("arch-complexity"));
+        assert!(
+            content.contains("Devil's Advocate Notice"),
+            "moderator content must include DA notice when DA is set"
+        );
+        assert!(
+            content.contains("arch-complexity"),
+            "moderator DA notice must name the designated advocate"
+        );
+    }
+
+    #[test]
+    fn moderator_without_da_has_no_notice() {
+        let reports = vec![PeerReport {
+            agent_name: "arch-complexity",
+            content: "complexity r1",
+        }];
+        let content =
+            generate_moderator_agent(&reports, DebateRole::Moderator.default_model(), None);
+        assert!(
+            !content.contains("Devil's Advocate Notice"),
+            "moderator without DA must not contain a DA notice"
+        );
+    }
+
+    #[test]
+    fn moderator_da_notice_appears_before_reports_section() {
+        let reports = vec![PeerReport {
+            agent_name: "arch-principal",
+            content: "principal r1",
+        }];
+        let content =
+            generate_moderator_agent(&reports, DebateRole::Moderator.default_model(), Some("arch-principal"));
+        let notice_pos = content.find("Devil's Advocate Notice").unwrap();
+        let reports_pos = content.find("## All Architect Reports").unwrap();
+        assert!(
+            notice_pos < reports_pos,
+            "DA notice must appear before the reports section"
+        );
     }
 }

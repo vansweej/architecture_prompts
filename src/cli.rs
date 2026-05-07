@@ -88,6 +88,17 @@ pub struct Cli {
     /// is 1 (zero is treated as 1).
     #[arg(long, default_value_t = 4, requires = "debate")]
     pub concurrency: usize,
+
+    /// Designate one architect as the devil's advocate for Round 2.
+    ///
+    /// The selected architect will use an adversarial challenge template in
+    /// Round 2, mounting the strongest possible case against consensus
+    /// findings, rather than the standard balanced challenge/endorse flow.
+    ///
+    /// Must be used together with `--debate`. The moderator will receive a
+    /// notice that this persona's Round 2 report is adversarial in nature.
+    #[arg(long, value_enum, requires = "debate")]
+    pub devils_advocate: Option<ArchitectType>,
 }
 
 #[cfg(test)]
@@ -280,5 +291,32 @@ mod tests {
     #[test]
     fn concurrency_requires_debate() {
         assert!(parse(&["--concurrency", "2"]).is_err());
+    }
+
+    // ── --devils-advocate ─────────────────────────────────────────────────────
+
+    #[test]
+    fn devils_advocate_parses_with_debate() {
+        let cli = parse(&["--debate", "--devils-advocate", "complexity"]).unwrap();
+        assert!(matches!(cli.devils_advocate, Some(ArchitectType::Complexity)));
+    }
+
+    #[test]
+    fn devils_advocate_defaults_to_none() {
+        let cli = parse(&["--debate"]).unwrap();
+        assert!(cli.devils_advocate.is_none());
+    }
+
+    #[test]
+    fn devils_advocate_requires_debate() {
+        assert!(parse(&["--devils-advocate", "security"]).is_err());
+    }
+
+    #[test]
+    fn devils_advocate_accepts_all_architect_values() {
+        for value in &["principal", "design", "complexity", "security"] {
+            let cli = parse(&["--debate", "--devils-advocate", value]).unwrap();
+            assert!(cli.devils_advocate.is_some(), "--devils-advocate {value} must parse");
+        }
     }
 }

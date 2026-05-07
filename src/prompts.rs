@@ -7,7 +7,7 @@ const SECURITY: &str = include_str!("../prompts/system/security.md");
 const MODERATOR: &str = include_str!("../prompts/system/moderator.md");
 
 /// The four available architect personas, embedded at compile time.
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ArchitectType {
     /// Principal software architect — system-level evaluation
     Principal,
