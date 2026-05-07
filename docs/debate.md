@@ -15,10 +15,16 @@ forces each persona to justify its claims against peer scrutiny.
 A standard single-agent review is a monologue: one persona, one pass, no
 challenge. The debate is a structured protocol:
 
-```
-Round 1  →  four independent reviews, no peer context
-Round 2  →  each agent reads the other three Round 1 reports and responds
-Synthesis →  the moderator reads all eight reports and renders a final verdict
+```mermaid
+flowchart LR
+    R1["Round 1\nFour independent reviews\nno peer context"]
+    R2["Round 2\nEach agent reads the other\nthree Round 1 reports\nand responds"]
+    R3["Synthesis\nModerator reads all\neight reports and\nrenders a final verdict"]
+    R1 --> R2 --> R3
+
+    style R1 fill:#4a6fa5,color:#fff,stroke:#2d4a73
+    style R2 fill:#7a6b8a,color:#fff,stroke:#5a4b6a
+    style R3 fill:#6b8f71,color:#fff,stroke:#4a6b50
 ```
 
 Each round is run by a freshly generated opencode agent file with permissions
@@ -212,20 +218,23 @@ special-casing in existing single-agent code paths.
 
 ## Context Injection
 
-```
-Round 1                          Round 2
-───────────────────────          ────────────────────────────────
-DebateContext {                  DebateContext {
-  round: Round1,                   round: Round2,
-  own_report: None,                own_report: Some(own_r1),
-  peer_reports: [],                peer_reports: [3 peers],
-}                                }
-     │                                 │
-     ▼                                 ▼
-System prompt only            System prompt
-                              + Round 2 challenge template
-                                (own_report injected at {own_report})
-                                (peer_reports injected at {peer_reports})
+```mermaid
+flowchart TD
+    subgraph r1["Round 1 context"]
+        C1["DebateContext\nround: Round1\nown_report: None\npeer_reports: []"]
+    end
+
+    subgraph r2["Round 2 context"]
+        C2["DebateContext\nround: Round2\nown_report: Some(own_r1)\npeer_reports: [3 peers]"]
+    end
+
+    C1 --> O1["System prompt only"]
+    C2 --> O2["System prompt\n+ Round 2 challenge template\n  {own_report} substituted\n  {peer_reports} substituted"]
+
+    style C1 fill:#4a6fa5,color:#fff,stroke:#2d4a73
+    style C2 fill:#7a6b8a,color:#fff,stroke:#5a4b6a
+    style O1 fill:#f0f0f0,stroke:#aaa
+    style O2 fill:#f0f0f0,stroke:#aaa
 ```
 
 The `{own_report}` and `{peer_reports}` placeholders in
@@ -298,17 +307,17 @@ exists on disk.  Output file existence is checked **in addition to** exit code
 because `opencode run` may exit 0 even when the LLM declines to write output.
 The file check is the authoritative signal.
 
-```
-Batch completes
-    │
-    ▼
-Any non-zero exit?  ──yes──►  DebateAgentFailed (fail fast)
-    │ no
-    ▼
-All output files present?  ──no──►  DebateOutputMissing (fail fast)
-    │ yes
-    ▼
-Next batch (or done)
+```mermaid
+flowchart TD
+    A([Batch completes]) --> B{Any non-zero\nexit code?}
+    B -->|Yes| C["DebateAgentFailed\nfail fast"]
+    B -->|No| D{All output files\npresent on disk?}
+    D -->|No| E["DebateOutputMissing\nfail fast"]
+    D -->|Yes| F([Next batch\nor done])
+
+    style C fill:#8b4a4a,color:#fff,stroke:#6b2d2d
+    style E fill:#8b4a4a,color:#fff,stroke:#6b2d2d
+    style F fill:#6b8f71,color:#fff,stroke:#4a6b50
 ```
 
 ### Error variants
@@ -323,26 +332,36 @@ Next batch (or done)
 
 ### `run_debate` call graph
 
-```
-run_debate(config, runner)
-├── ensure_round_dirs()           creates reviews/round1/ and reviews/round2/
-├── run_round1(config, runner)
-│   ├── generate_debate_agent() × 4    builds Round 1 agent files
-│   ├── write_named_agent_file() × 4   writes to .opencode/agents/
-│   ├── spawn_batch()            runs up to concurrency agents in parallel
-│   └── verify_round_outputs()   checks reviews/round1/arch-*.md exist
-├── run_round2(config, runner)
-│   ├── read round1 reports × 4
-│   ├── generate_debate_agent() × 4    builds Round 2 agent files with peer context
-│   ├── write_named_agent_file() × 4
-│   ├── spawn_batch()
-│   └── verify_round_outputs()   checks reviews/round2/arch-*.md exist
-└── run_synthesis(config, runner)
-    ├── read all 8 reports
-    ├── generate_moderator_agent()     builds moderator agent file
-    ├── write_named_agent_file()
-    ├── spawn_batch()            runs arch-moderator
-    └── verify final-report.md exists
+```mermaid
+graph TD
+    RD["run_debate(config, runner)"]
+
+    RD --> ERD["ensure_round_dirs()\ncreates reviews/round1/\nand reviews/round2/"]
+    RD --> RR1["run_round1(config, runner)"]
+    RD --> RR2["run_round2(config, runner)"]
+    RD --> RS["run_synthesis(config, runner)"]
+
+    RR1 --> RR1A["generate_debate_agent() ×4\nbuilds Round 1 agent files"]
+    RR1 --> RR1B["write_named_agent_file() ×4\nwrites to .opencode/agents/"]
+    RR1 --> RR1C["spawn_batch()\nruns up to concurrency\nagents in parallel"]
+    RR1 --> RR1D["verify_round_outputs()\nchecks reviews/round1/\narch-*.md exist"]
+
+    RR2 --> RR2A["read round1 reports ×4"]
+    RR2 --> RR2B["generate_debate_agent() ×4\nbuilds Round 2 agent files\nwith peer context"]
+    RR2 --> RR2C["write_named_agent_file() ×4"]
+    RR2 --> RR2D["spawn_batch()"]
+    RR2 --> RR2E["verify_round_outputs()\nchecks reviews/round2/\narch-*.md exist"]
+
+    RS --> RSA["read all 8 reports"]
+    RS --> RSB["generate_moderator_agent()\nbuilds moderator agent file"]
+    RS --> RSC["write_named_agent_file()"]
+    RS --> RSD["spawn_batch()\nruns arch-moderator"]
+    RS --> RSE["verify final-report.md exists"]
+
+    style RD  fill:#4a6fa5,color:#fff,stroke:#2d4a73
+    style RR1 fill:#7a6b8a,color:#fff,stroke:#5a4b6a
+    style RR2 fill:#7a6b8a,color:#fff,stroke:#5a4b6a
+    style RS  fill:#6b8f71,color:#fff,stroke:#4a6b50
 ```
 
 ---
