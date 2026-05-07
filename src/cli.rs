@@ -19,7 +19,7 @@ pub struct Cli {
     /// The architect persona to activate.
     ///
     /// One of: principal, design, complexity, security
-    #[arg(value_enum, required_unless_present_any = ["list", "clean"])]
+    #[arg(value_enum, required_unless_present_any = ["list", "clean", "debate"])]
     pub architect: Option<ArchitectType>,
 
     /// Launch opencode with full permissions (default: read-only).
@@ -64,6 +64,30 @@ pub struct Cli {
         conflicts_with_all = ["full", "review", "dry_run"]
     )]
     pub clean: bool,
+
+    /// Run the multi-round architect debate pipeline.
+    ///
+    /// Launches all four architect personas in a coordinated multi-round review:
+    /// Round 1 (independent assessments) → Round 2 (peer challenge/endorsement)
+    /// → Synthesis (moderator final report). All output is written to
+    /// `reviews/round1/`, `reviews/round2/`, and `reviews/final-report.md`.
+    ///
+    /// Mutually exclusive with all single-agent flags and the positional
+    /// architect argument.
+    #[arg(
+        long,
+        default_value_t = false,
+        conflicts_with_all = ["full", "review", "clean", "dry_run", "architect"]
+    )]
+    pub debate: bool,
+
+    /// Maximum number of concurrent opencode processes per debate round.
+    ///
+    /// Controls how many architect agents run in parallel during Round 1 and
+    /// Round 2. Must be used together with `--debate`. Minimum effective value
+    /// is 1 (zero is treated as 1).
+    #[arg(long, default_value_t = 4, requires = "debate")]
+    pub concurrency: usize,
 }
 
 #[cfg(test)]
@@ -192,5 +216,69 @@ mod tests {
     #[test]
     fn clean_conflicts_with_dry_run() {
         assert!(parse(&["--clean", "--dry-run"]).is_err());
+    }
+
+    // ── --debate ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn debate_flag_parses() {
+        let cli = parse(&["--debate"]).unwrap();
+        assert!(cli.debate);
+    }
+
+    #[test]
+    fn debate_flag_is_false_by_default() {
+        let cli = parse(&["principal"]).unwrap();
+        assert!(!cli.debate);
+    }
+
+    #[test]
+    fn debate_requires_no_architect() {
+        let cli = parse(&["--debate"]).unwrap();
+        assert!(cli.architect.is_none());
+    }
+
+    #[test]
+    fn debate_conflicts_with_full() {
+        assert!(parse(&["--debate", "--full"]).is_err());
+    }
+
+    #[test]
+    fn debate_conflicts_with_review() {
+        assert!(parse(&["--debate", "--review"]).is_err());
+    }
+
+    #[test]
+    fn debate_conflicts_with_clean() {
+        assert!(parse(&["--debate", "--clean"]).is_err());
+    }
+
+    #[test]
+    fn debate_conflicts_with_dry_run() {
+        assert!(parse(&["--debate", "--dry-run"]).is_err());
+    }
+
+    #[test]
+    fn debate_conflicts_with_architect() {
+        assert!(parse(&["--debate", "principal"]).is_err());
+    }
+
+    // ── --concurrency ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn concurrency_parses_with_debate() {
+        let cli = parse(&["--debate", "--concurrency", "2"]).unwrap();
+        assert_eq!(cli.concurrency, 2);
+    }
+
+    #[test]
+    fn concurrency_defaults_to_four() {
+        let cli = parse(&["--debate"]).unwrap();
+        assert_eq!(cli.concurrency, 4);
+    }
+
+    #[test]
+    fn concurrency_requires_debate() {
+        assert!(parse(&["--concurrency", "2"]).is_err());
     }
 }

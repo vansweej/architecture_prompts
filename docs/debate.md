@@ -82,10 +82,54 @@ The moderator:
 
 ---
 
+## CLI Reference
+
+### Basic usage
+
+```bash
+# Run the full debate pipeline in the current directory
+architecture_prompts --debate
+```
+
+### With options
+
+```bash
+# Limit to 2 concurrent opencode processes per round
+architecture_prompts --debate --concurrency 2
+
+# Override the LLM model for all debate agents
+architecture_prompts --debate --model github-copilot/claude-sonnet-4.6
+
+# Combine model override and concurrency limit
+architecture_prompts --debate --model openai/gpt-5 --concurrency 1
+```
+
+### Flag reference
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--debate` | `false` | Enable the multi-round debate pipeline. Mutually exclusive with all single-agent flags and the positional `ARCHITECT` argument. |
+| `--concurrency <N>` | `4` | Max parallel `opencode run` processes per round. Requires `--debate`. Zero is treated as 1. |
+| `--model <PROVIDER/MODEL>` | per-persona default | Override the LLM model for all agents in this run. |
+
+### Conflicts
+
+`--debate` is mutually exclusive with: `--full`, `--review`, `--dry-run`, `--clean`, and the positional `ARCHITECT` argument.
+
+`--concurrency` is only valid with `--debate`.
+
+### Exit behaviour
+
+- Exits **0** on success (all nine output files produced).
+- Exits **1** if opencode is not in `PATH` (`opencode not found in PATH`).
+- Exits **1** if any `opencode run` subprocess exits non-zero (`debate round N agent … failed`).
+- Exits **1** if an expected output file is absent after a subprocess exits 0 (`debate round N agent … did not produce expected output`).
+
+---
+
 ## Output Structure
 
 After a full debate run, the `reviews/` directory contains:
-
 ```
 reviews/
 ├── round1/
@@ -319,3 +363,16 @@ run_debate(config, runner)
 |------|---------|
 | `src/debate.rs` | Orchestration engine: `DebateConfig`, `ProcessRunner` trait, `RealRunner`, `MockRunner` (tests), `ensure_round_dirs`, `run_round1/2/synthesis`, `run_debate`, `spawn_batch` |
 | `src/error.rs` | Five new `AppError` variants: `DebateAgentFailed`, `DebateOutputMissing`, `DebateReportRead`, `DebateRoundDirCreation`, `DebateSpawnFailed` |
+
+## Files Changed in Phase 3
+
+| File | Change |
+|------|--------|
+| `src/cli.rs` | Added `--debate` flag and `--concurrency <N>` flag; added `"debate"` to `required_unless_present_any` on `ARCHITECT`; 11 new unit tests |
+| `src/main.rs` | Wired debate branch: `check_opencode_in_path` → `DebateConfig` → `run_debate(&config, &RealRunner)` |
+| `src/debate.rs` | Removed `#![allow(dead_code)]`; added `#[allow(dead_code)]` on `devils_advocate` field (reserved for Phase 4) |
+| `src/debate_agent.rs` | Removed `#![allow(dead_code)]` |
+| `src/prompts.rs` | Removed `#[allow(dead_code)]` from `MODERATOR`, `DebateRole`, `impl DebateRole` |
+| `tests/integration.rs` | Added `debate_flag_does_not_require_architect_arg` (non-ignored) and `debate_pipeline_runs_end_to_end` (`#[ignore]`) |
+| `README.md` | Added debate introduction, updated CLI reference, added `--debate` examples section, updated permission modes table |
+| `docs/debate.md` | Added CLI Reference section (flags, conflicts, exit behaviour) |

@@ -222,7 +222,6 @@ fn review_and_full_flags_conflict() {
 }
 
 // ── --clean ───────────────────────────────────────────────────────────────────
-
 #[test]
 fn clean_exits_successfully_when_nothing_to_clean() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -275,5 +274,55 @@ fn clean_removes_generated_agent_files() {
     assert!(
         stderr.contains("Cleaned 2 agent file(s)"),
         "expected cleaned count in stderr, got:\n{stderr}"
+    );
+}
+
+// ── --debate ──────────────────────────────────────────────────────────────────
+
+/// Verifies that `--debate` alone satisfies the CLI parser (no "required
+/// argument" error from clap). The binary will fail downstream because opencode
+/// is not in the (deliberately emptied) PATH, but it must not fail with a clap
+/// parse error.
+#[test]
+fn debate_flag_does_not_require_architect_arg() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output = binary()
+        .arg("--debate")
+        .current_dir(tmp.path())
+        // Empty PATH so opencode can't be found → binary exits quickly
+        // with "opencode not found" rather than actually running the pipeline.
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    // The process fails with the opencode-not-found error, NOT with a clap
+    // "required argument" error.  Verify by checking stderr.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("required"),
+        "--debate must not trigger a clap 'required argument' error, stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("opencode") || !output.status.success(),
+        "binary should fail on opencode check, not on clap parsing, stderr:\n{stderr}"
+    );
+}
+
+/// Full end-to-end debate pipeline smoke test.
+///
+/// Requires a live `opencode` binary in PATH and a repository to review.
+/// Skipped in CI — run manually with `cargo test -- --ignored`.
+#[test]
+#[ignore]
+fn debate_pipeline_runs_end_to_end() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let status = binary()
+        .arg("--debate")
+        .current_dir(tmp.path())
+        .status()
+        .unwrap();
+    assert!(status.success(), "debate pipeline exited with: {}", status);
+    assert!(
+        tmp.path().join("reviews").join("final-report.md").exists(),
+        "final-report.md must exist after a successful debate run"
     );
 }

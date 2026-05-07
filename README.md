@@ -2,6 +2,8 @@
 
 A Rust CLI that activates a specialist architect persona for an [opencode](https://opencode.ai) session. Select one of four embedded system prompts, and the tool writes a project-local opencode agent file and launches opencode with that agent active — all in a single command.
 
+It also supports a **multi-round debate mode** (`--debate`) that runs all four personas in sequence — independent review, peer challenge, and moderator synthesis — producing a `reviews/final-report.md` without any manual steps.
+
 ---
 
 ## How it works
@@ -82,26 +84,33 @@ cargo build
 ## Command-line reference
 
 ```
-architecture_prompts <ARCHITECT> [OPTIONS]
+architecture_prompts [OPTIONS] [ARCHITECT]
+architecture_prompts --debate [--concurrency <N>] [--model <PROVIDER/MODEL>]
 
 ARGUMENTS:
-  <ARCHITECT>    Architect persona to activate
+  [ARCHITECT]    Architect persona to activate
                  One of: principal, design, complexity, security
+                 Required unless --list, --clean, or --debate is given
 
 OPTIONS:
   -m, --model <PROVIDER/MODEL>
-               Override the default LLM model for this persona
-               (e.g., github-copilot/claude-opus-4.6).
-               If omitted, each persona uses its built-in default.
+                Override the default LLM model for this persona
+                (e.g., github-copilot/claude-opus-4.6).
+                If omitted, each persona uses its built-in default.
       --full   Launch opencode with full permissions (conflicts with --review)
       --review Run in review mode: read-only + can write findings to reviews/
-               (conflicts with --full)
+                (conflicts with --full)
+      --debate Run the multi-round architect debate pipeline (all four personas).
+                Mutually exclusive with all single-agent flags and ARCHITECT.
+      --concurrency <N>
+                Max concurrent opencode processes per debate round (default: 4).
+                Only valid with --debate.
       --clean  Remove all arch-*.md agent files from .opencode/agents/ in the
-               current directory and clean up empty directories. Does not
-               launch opencode. (conflicts with --full, --review, --dry-run)
+                current directory and clean up empty directories. Does not
+                launch opencode. (conflicts with --full, --review, --dry-run)
       --list   List all available architect prompts with descriptions, then exit
       --dry-run
-               Print the generated agent .md to stdout; do not write files or launch opencode
+                Print the generated agent .md to stdout; do not write files or launch opencode
   -h, --help   Print help
 ```
 
@@ -189,6 +198,59 @@ If `.opencode/agents/` and `.opencode/` become empty after the removal, they are
 deleted too. The `reviews/` directory is left untouched — its findings are yours
 to keep or discard.
 
+---
+
+## Multi-round debate mode
+
+`--debate` orchestrates all four personas in a single command, without any
+manual steps between rounds.
+
+```bash
+cd /path/to/your/project
+architecture_prompts --debate
+```
+
+**What happens:**
+
+1. **Round 1** — all four personas review the codebase independently and write their findings to `reviews/round1/arch-<name>.md`.
+2. **Round 2** — each persona reads its own Round 1 report plus the three peer reports, then produces a challenge/endorsement response in `reviews/round2/arch-<name>.md`.
+3. **Synthesis** — the moderator agent reads all eight reports and writes a final verdict to `reviews/final-report.md`.
+
+**Output structure:**
+
+```
+reviews/
+├── round1/
+│   ├── arch-principal.md
+│   ├── arch-design.md
+│   ├── arch-complexity.md
+│   └── arch-security.md
+├── round2/
+│   ├── arch-principal.md
+│   ├── arch-design.md
+│   ├── arch-complexity.md
+│   └── arch-security.md
+└── final-report.md        ← primary deliverable
+```
+
+**Options:**
+
+```bash
+# Limit parallel agents to 2 (useful on resource-constrained machines)
+architecture_prompts --debate --concurrency 2
+
+# Override the model for all debate agents
+architecture_prompts --debate --model github-copilot/claude-sonnet-4.6
+```
+
+`--concurrency` defaults to 4 (run all four Round 1 agents in parallel). Set it
+to 1 to run agents sequentially.
+
+See [docs/debate.md](docs/debate.md) for a full description of the protocol,
+permission model, and orchestration internals.
+
+---
+
 ### Suggested review pipeline
 
 Run the personas in sequence for a thorough architecture review:
@@ -255,6 +317,9 @@ directory (and `.opencode/` if empty) so no leftover files remain on disk.
 | **Read-only** (default) | deny | deny | `git log*`, `git diff*`, `git status` only | ask |
 | **Review** (`--review`) | deny except `reviews/arch-*.md` | deny except `reviews/arch-*.md` | `git log*`, `git diff*`, `git status` only | ask |
 | **Full** (`--full`) | allow | allow | all | allow |
+| **Debate Round 1** (`--debate`) | deny except `reviews/round1/arch-*.md` | deny except `reviews/round1/arch-*.md` | `git log*`, `git diff*`, `git status` only | ask |
+| **Debate Round 2** (`--debate`) | deny except `reviews/round2/arch-*.md` | deny except `reviews/round2/arch-*.md` | `git log*`, `git diff*`, `git status` only | deny |
+| **Debate Synthesis** (`--debate`) | deny except `reviews/final-report.md` | deny except `reviews/final-report.md` | deny | deny |
 
 ---
 
@@ -290,4 +355,5 @@ flowchart LR
 ## Further reading
 
 - [docs/prompts.md](docs/prompts.md) — detailed description of each architect persona and the suggested review pipeline
+- [docs/debate.md](docs/debate.md) — multi-round debate protocol, permission model, orchestration internals, and CLI reference
 - [docs/architecture.md](docs/architecture.md) — internal architecture of this tool

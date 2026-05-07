@@ -1,7 +1,4 @@
 // Phase 2: orchestration engine for the multi-round architect debate.
-// `run_debate` is not yet called from main() — that happens in Phase 3.
-// Suppress dead_code for the whole module until Phase 3 connects everything.
-#![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 
@@ -32,6 +29,7 @@ pub struct DebateConfig {
     /// Reserved for Phase 4 — designates one architect as devil's advocate in
     /// Round 2 so it challenges all consensus findings instead of the standard
     /// challenge/endorse flow.
+    #[allow(dead_code)]
     pub devils_advocate: Option<ArchitectType>,
 }
 
