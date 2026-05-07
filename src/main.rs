@@ -1,5 +1,6 @@
 mod agent;
 mod cli;
+mod debate;
 mod debate_agent;
 mod error;
 mod launcher;
